@@ -1,0 +1,1821 @@
+<!doctype html>
+<html lang="sl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Načrtovalec nakladanja palet: razpored palet na vozilu, preverjanje osnih obremenitev in vrstni red nakladanja.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2040%2040%22%3E%3Crect%20x%3D%221%22%20y%3D%221%22%20width%3D%2238%22%20height%3D%2238%22%20rx%3D%225%22%20fill%3D%22%23d06604%22/%3E%3Cg%20fill%3D%22%23fff%22%3E%3Crect%20x%3D%228%22%20y%3D%2212%22%20width%3D%2224%22%20height%3D%224%22/%3E%3Crect%20x%3D%228%22%20y%3D%2218%22%20width%3D%2224%22%20height%3D%224%22/%3E%3Crect%20x%3D%228%22%20y%3D%2224%22%20width%3D%2224%22%20height%3D%224%22/%3E%3Crect%20x%3D%228%22%20y%3D%2229%22%20width%3D%224%22%20height%3D%224%22/%3E%3Crect%20x%3D%2218%22%20y%3D%2229%22%20width%3D%224%22%20height%3D%224%22/%3E%3Crect%20x%3D%2228%22%20y%3D%2229%22%20width%3D%224%22%20height%3D%224%22/%3E%3C/g%3E%3C/svg%3E">
+<style>
+:root { color-scheme: light; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body { margin: 0; font: 14px system-ui, sans-serif; }
+img { max-width: 100%; }
+[hidden] { display: none !important; }
+</style>
+<title>Načrtovalec nakladanja palet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: inputs (vehicle + cargo) in a left column; results on the right, led by an aligned side-elevation + floor-plan drawing. One column on phones. */
+:root {
+  --bg: #e7ecee;
+  --panel: #f7f9fa;
+  --panel-2: #edf1f3;
+  --field: #ffffff;
+  --ink: #15212a;
+  --muted: #56656f;
+  --rule: #cdd6db;
+  --rule-strong: #9babb4;
+  --accent: #d06604;
+  --accent-soft: #fbe4cf;
+  --accent-ink: #ffffff;
+  --ok: #217a4b;
+  --ok-soft: #d5ede0;
+  --warn: #946505;
+  --warn-soft: #f5e7c4;
+  --bad: #b93427;
+  --bad-soft: #f6d8d3;
+  --deck: #dbe3e7;
+  --truck: #3a4953;
+  --truck-2: #6d7e89;
+  --glass: #b3c7d3;
+  --wheel: #1d282f;
+  --hub: #8d9ca5;
+  --ground: #93a3ac;
+  --pallet-ink: #0f171d;
+  --font-display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --font-body: "Barlow", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10161b; --panel: #172028; --panel-2: #1e2932; --field: #111a20;
+    --ink: #e3eaee; --muted: #93a3ad; --rule: #2b3842; --rule-strong: #4a5c68;
+    --accent: #f28b2a; --accent-soft: #3d2915; --accent-ink: #1a1007;
+    --ok: #52c287; --ok-soft: #163225; --warn: #e2ab3f; --warn-soft: #382d13;
+    --bad: #f06c5c; --bad-soft: #3c1e1a;
+    --deck: #22303a; --truck: #9fb0bb; --truck-2: #66798a; --glass: #3d5463;
+    --wheel: #070b0e; --hub: #5f707b; --ground: #4f5f69;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #10161b; --panel: #172028; --panel-2: #1e2932; --field: #111a20;
+  --ink: #e3eaee; --muted: #93a3ad; --rule: #2b3842; --rule-strong: #4a5c68;
+  --accent: #f28b2a; --accent-soft: #3d2915; --accent-ink: #1a1007;
+  --ok: #52c287; --ok-soft: #163225; --warn: #e2ab3f; --warn-soft: #382d13;
+  --bad: #f06c5c; --bad-soft: #3c1e1a;
+  --deck: #22303a; --truck: #9fb0bb; --truck-2: #66798a; --glass: #3d5463;
+  --wheel: #070b0e; --hub: #5f707b; --ground: #4f5f69;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.5 var(--font-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 40px;
+}
+.wrap { max-width: 1480px; margin: 0 auto; }
+h1, h2, h3 { text-wrap: balance; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Header */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap;
+  padding-block: 20px 16px; margin-bottom: 18px; border-bottom: 1px solid var(--rule);
+}
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.brand svg { flex: none; }
+.brand h1 {
+  margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 30px; line-height: 1;
+  letter-spacing: .02em; text-transform: uppercase;
+}
+.brand p { margin: 3px 0 0; color: var(--muted); font-size: 14px; }
+.topbar .meta { color: var(--muted); font-size: 13px; }
+
+/* Layout */
+.layout { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 1080px) {
+  .layout { grid-template-columns: minmax(340px, 410px) minmax(0, 1fr); align-items: start; }
+}
+.col { display: grid; gap: 18px; min-width: 0; }
+
+.card {
+  background: var(--panel); border: 1px solid var(--rule); border-radius: 6px;
+  padding: 16px 18px; min-width: 0;
+}
+.card-h { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.card-h h2 {
+  margin: 0; font-family: var(--font-display); font-weight: 600; font-size: 21px; line-height: 1.1;
+  letter-spacing: .05em; text-transform: uppercase;
+}
+.card-h .spacer { flex: 1; }
+.tag {
+  font: 600 11px/1 var(--font-body); letter-spacing: .08em; text-transform: uppercase;
+  padding: 5px 8px; border-radius: 3px; background: var(--accent-soft); color: var(--accent);
+}
+.muted { color: var(--muted); }
+
+/* Form controls */
+input[type="text"], select {
+  font: inherit; font-size: 15px; color: var(--ink); background: var(--field);
+  border: 1px solid var(--rule-strong); border-radius: 4px; padding: 6px 8px; width: 100%; min-width: 0;
+}
+input.numin { font-family: var(--font-mono); font-size: 14px; font-variant-numeric: tabular-nums; }
+input[aria-invalid="true"] { border-color: var(--bad); background: var(--bad-soft); }
+input[type="checkbox"], input[type="range"] { accent-color: var(--accent); }
+.field { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.btn {
+  font: 600 14px/1.1 var(--font-body); padding: 8px 11px; border-radius: 4px; cursor: pointer;
+  border: 1px solid var(--rule-strong); background: var(--panel); color: var(--ink);
+}
+.btn:hover { border-color: var(--ink); }
+.btn.small { font-size: 13px; padding: 6px 9px; }
+.link {
+  background: none; border: 0; padding: 0; cursor: pointer; color: var(--accent);
+  font-weight: 600; text-decoration: underline; text-underline-offset: 2px;
+}
+.iconbtn {
+  width: 34px; height: 34px; display: inline-grid; place-items: center; flex: none; cursor: pointer;
+  border: 1px solid var(--rule-strong); border-radius: 4px; background: var(--panel); color: var(--ink);
+}
+.iconbtn:hover:not(:disabled) { border-color: var(--ink); }
+.iconbtn:disabled { opacity: .4; cursor: default; }
+.iconbtn.del { width: 30px; height: 30px; border-color: transparent; color: var(--muted); }
+.iconbtn.del:hover { border-color: var(--rule-strong); color: var(--bad); }
+
+/* Vehicle */
+.spec { margin: 10px 0 0; font-size: 14px; color: var(--muted); }
+.spec b { color: var(--ink); font-weight: 600; }
+details.vdata { margin-top: 12px; border-top: 1px solid var(--rule); padding-top: 10px; }
+details.vdata summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+.vgroup { border: 0; padding: 0; margin: 14px 0 0; min-width: 0; }
+.vgroup legend {
+  padding: 0; margin-bottom: 6px; font-size: 12px; font-weight: 600; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--muted);
+}
+.vgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 10px; }
+.vfield { display: grid; gap: 3px; font-size: 13px; color: var(--muted); align-content: end; }
+.inwrap { position: relative; display: block; }
+.inwrap input { padding-right: 30px; }
+.inwrap i {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  font-style: normal; font-size: 12px; color: var(--muted); pointer-events: none;
+}
+.hint { font-size: 13px; color: var(--muted); margin: 12px 0 0; }
+
+/* Cargo lines */
+.lines { display: grid; }
+.line { display: grid; gap: 8px; padding-block: 12px; border-top: 1px solid var(--rule); }
+.line:first-child { border-top: 0; padding-top: 2px; }
+.line-top { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto 30px; gap: 8px; align-items: center; }
+.swatch {
+  width: 18px; height: 18px; border-radius: 2px; background: var(--c);
+  background-image: linear-gradient(90deg, transparent 27%, rgba(15,23,29,.28) 27% 34%, transparent 34% 66%, rgba(15,23,29,.28) 66% 73%, transparent 73%);
+  box-shadow: inset 0 0 0 1px rgba(15,23,29,.35);
+}
+.line-top input.lbl { font-weight: 600; }
+.qty { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.qty input { width: 62px; }
+.dims { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.dims label { display: grid; gap: 2px; font-size: 12px; color: var(--muted); }
+.check { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; width: fit-content; }
+.check input { width: 16px; height: 16px; margin: 0; }
+.addrow { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--rule); }
+.totals {
+  display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 12px; font-size: 14px; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.totals b { color: var(--ink); font-weight: 600; }
+.options { margin-top: 14px; display: grid; gap: 4px; }
+.seg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.segopt { position: relative; cursor: pointer; min-width: 0; }
+.segopt input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
+.segopt > span {
+  display: grid; gap: 3px; height: 100%; padding: 10px 11px; border-radius: 4px;
+  border: 1px solid var(--rule-strong); background: var(--field);
+}
+.segopt svg { display: block; margin-bottom: 3px; }
+.segopt b { font-weight: 600; font-size: 15px; line-height: 1.2; }
+.segopt small { font-size: 12.5px; color: var(--muted); line-height: 1.3; }
+.segopt:hover > span { border-color: var(--ink); }
+.segopt input:checked + span { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.segopt input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.opts2 { margin-top: 14px; }
+.opts2 + .hint { margin-top: 6px; }
+.empty { margin: 0; color: var(--muted); }
+
+/* Summary */
+.banner {
+  margin: 0 0 12px; padding: 8px 12px; border-radius: 4px; font-size: 14px;
+  background: var(--accent-soft); color: var(--ink);
+}
+.status { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; }
+.pill {
+  font: 700 13px/1 var(--font-display); letter-spacing: .08em; text-transform: uppercase;
+  padding: 7px 11px; border-radius: 999px; white-space: nowrap;
+}
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+.pill.idle { background: var(--panel-2); color: var(--muted); }
+.headline { font-size: 17px; font-weight: 600; min-width: 0; }
+.figs {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); margin: 14px 0 16px;
+}
+.fig { padding: 10px 14px; border-left: 1px solid var(--rule); min-width: 0; }
+.fig:first-child { border-left: 0; padding-left: 0; }
+.fig .k { font-size: 12px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+.fig .v {
+  font-family: var(--font-display); font-weight: 600; font-size: 32px; line-height: 1.1;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.fig .v small { font-size: 18px; font-weight: 500; color: var(--muted); margin-left: 2px; }
+.fig .s { font-size: 13px; color: var(--muted); }
+@media (max-width: 640px) {
+  .figs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fig:nth-child(3) { border-left: 0; padding-left: 0; }
+  .fig:nth-child(n+3) { border-top: 1px solid var(--rule); }
+}
+.axles { display: grid; gap: 12px; }
+.axle { display: grid; grid-template-columns: minmax(118px, 180px) minmax(0, 1fr) 132px; gap: 6px 14px; align-items: center; }
+.axle .nm { font-weight: 600; font-size: 15px; line-height: 1.2; }
+.axle .nm span { display: block; font-weight: 400; font-size: 12.5px; color: var(--muted); }
+.bar { position: relative; height: 12px; background: var(--panel-2); border-radius: 2px; box-shadow: inset 0 0 0 1px var(--rule); }
+.bar .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: var(--ok); }
+.bar .fill.warn { background: var(--warn); }
+.bar .fill.bad { background: var(--bad); }
+.bar .lim, .bar .min { position: absolute; top: -5px; bottom: -5px; width: 2px; margin-left: -1px; }
+.bar .lim { background: var(--ink); }
+.bar .min { background: repeating-linear-gradient(var(--ink) 0 3px, transparent 3px 5px); }
+.axle .val { text-align: right; font-family: var(--font-mono); font-size: 14px; font-variant-numeric: tabular-nums; line-height: 1.25; }
+.axle .val span { display: block; font-size: 12px; color: var(--muted); }
+.axle .val.bad b { color: var(--bad); }
+.axle .val.warn b { color: var(--warn); }
+@media (max-width: 560px) {
+  .axle { grid-template-columns: minmax(0, 1fr) auto; }
+  .axle .bar { grid-column: 1 / -1; grid-row: 2; }
+}
+.balance { display: flex; flex-wrap: wrap; gap: 6px 22px; margin-top: 14px; font-size: 14px; color: var(--muted); }
+.balance b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.notes { list-style: none; margin: 14px 0 0; padding: 12px 0 0; border-top: 1px solid var(--rule); display: grid; gap: 7px; }
+.notes li { display: grid; grid-template-columns: 10px minmax(0, 1fr); gap: 10px; font-size: 14px; align-items: baseline; }
+.notes li::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--rule-strong); transform: translateY(-1px); }
+.notes li.bad::before { background: var(--bad); }
+.notes li.warn::before { background: var(--warn); }
+.notes li.ok::before { background: var(--ok); }
+.notes li.info::before { background: var(--accent); }
+
+/* Drawing */
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 12px; height: 12px; border-radius: 2px; background: var(--c); box-shadow: inset 0 0 0 1px rgba(15,23,29,.35); }
+.legend b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.svgwrap { overflow-x: auto; margin-inline: -4px; padding-inline: 4px; }
+.svgwrap svg { display: block; width: 100%; min-width: 760px; height: auto; margin-inline: auto; }
+.stepper { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.stepper input[type="range"] { flex: 1 1 180px; min-width: 140px; }
+.steplabel { font-family: var(--font-mono); font-size: 13px; min-width: 122px; text-align: right; font-variant-numeric: tabular-nums; }
+.stepnow { margin-top: 10px; padding: 10px 12px; border-radius: 4px; background: var(--panel-2); font-size: 14.5px; min-height: 46px; }
+.stepnow b { font-weight: 600; }
+
+/* SVG classes */
+.sv-ground { stroke: var(--ground); stroke-width: 3; }
+.sv-truck { fill: var(--truck); }
+.sv-truck2 { fill: var(--truck-2); }
+.sv-glass { fill: var(--glass); }
+.sv-arch { fill: var(--panel); }
+.sv-wheel { fill: var(--wheel); stroke: var(--truck-2); stroke-width: 2; }
+.sv-hub { fill: var(--hub); }
+.sv-body { fill: var(--deck); fill-opacity: .55; stroke: var(--rule-strong); stroke-width: 2; }
+.sv-deck { fill: var(--deck); stroke: var(--truck-2); stroke-width: 2.5; }
+.sv-tractor { fill: var(--panel-2); stroke: var(--rule-strong); stroke-width: 2; }
+.sv-pallet { stroke: var(--pallet-ink); stroke-width: 1.6; }
+.sv-base { fill: #0f171d; fill-opacity: .3; }
+.sv-ghost { fill: none; stroke: var(--rule-strong); stroke-width: 2; stroke-dasharray: 7 6; }
+.sv-cur { fill: none; stroke: var(--accent); stroke-width: 6; }
+.sv-ptext { fill: var(--pallet-ink); font-family: var(--font-mono); }
+.sv-gtext { fill: var(--muted); font-family: var(--font-mono); }
+.sv-text { fill: var(--ink); font-family: var(--font-body); }
+.sv-muted { fill: var(--muted); font-family: var(--font-body); }
+.sv-cap { fill: var(--muted); font-family: var(--font-body); font-weight: 600; letter-spacing: .08em; }
+.sv-load { font-family: var(--font-mono); font-weight: 600; fill: var(--ink); }
+.sv-load.ok { fill: var(--ok); }
+.sv-load.bad { fill: var(--bad); }
+.sv-load.warn { fill: var(--warn); }
+.sv-tick { stroke: var(--rule-strong); stroke-width: 2; }
+.sv-rule { stroke: var(--ink); stroke-width: 2; }
+.sv-cog { stroke: var(--accent); stroke-width: 2.5; stroke-dasharray: 10 7; fill: none; }
+.sv-cogmark { fill: var(--accent); }
+.sv-cogtext { fill: var(--accent); font-family: var(--font-mono); font-weight: 600; }
+.sv-window { fill: var(--ok-soft); stroke: var(--ok); stroke-width: 2; }
+.sv-wintext { fill: var(--ok); font-family: var(--font-mono); font-weight: 600; }
+.sv-hatchline { stroke: var(--accent); stroke-width: 3; }
+.sv-gapbox { fill: url(#hatch); stroke: var(--accent); stroke-width: 2; }
+.sv-resline { stroke: var(--rule-strong); stroke-width: 3; }
+.sv-resbox { fill: url(#hatchRes); stroke: var(--truck-2); stroke-width: 2; stroke-dasharray: 9 6; }
+.sv-resside { fill: none; stroke: var(--truck-2); stroke-width: 2.5; stroke-dasharray: 9 6; }
+.sv-restext { fill: var(--ink); font-family: var(--font-body); font-weight: 600; }
+.sv-unit { cursor: pointer; }
+
+/* Steps */
+.rows { list-style: none; margin: 0; padding: 0; columns: 2 360px; column-gap: 28px; }
+.rowgrp { break-inside: avoid; margin-bottom: 14px; }
+.row-h {
+  display: flex; justify-content: space-between; gap: 10px; padding-bottom: 4px; margin-bottom: 4px;
+  border-bottom: 1px solid var(--rule); font-family: var(--font-display); font-weight: 600; font-size: 15px;
+  letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
+}
+.row-h span:last-child { font-family: var(--font-mono); font-size: 12.5px; letter-spacing: 0; text-transform: none; }
+.step {
+  display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 10px; width: 100%; text-align: left;
+  padding: 6px 6px; border: 0; border-radius: 4px; background: none; cursor: pointer; align-items: start;
+}
+.step:hover { background: var(--panel-2); }
+.step.cur { background: var(--accent-soft); }
+.num {
+  width: 28px; height: 26px; display: grid; place-items: center; border-radius: 3px; background: var(--c);
+  color: #0f171d; font: 600 13px/1 var(--font-mono); box-shadow: inset 0 0 0 1px rgba(15,23,29,.3);
+}
+.step .what { font-weight: 600; font-size: 14.5px; line-height: 1.3; }
+.step .where { font-size: 13.5px; color: var(--muted); line-height: 1.35; }
+.copybox { margin-top: 10px; }
+.copybox textarea {
+  width: 100%; min-height: 160px; font: 13px/1.45 var(--font-mono); color: var(--ink);
+  background: var(--field); border: 1px solid var(--rule-strong); border-radius: 4px; padding: 8px;
+}
+footer { margin-top: 22px; font-size: 13px; color: var(--muted); max-width: 90ch; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+<div class="wrap" lang="sl">
+  <header class="topbar">
+    <div class="brand">
+      <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true">
+        <rect x="1" y="1" width="38" height="38" rx="5" fill="var(--accent)"/>
+        <rect x="8" y="12" width="24" height="4" fill="var(--accent-ink)"/>
+        <rect x="8" y="18" width="24" height="4" fill="var(--accent-ink)"/>
+        <rect x="8" y="24" width="24" height="4" fill="var(--accent-ink)"/>
+        <rect x="8" y="29" width="4" height="4" fill="var(--accent-ink)"/>
+        <rect x="18" y="29" width="4" height="4" fill="var(--accent-ink)"/>
+        <rect x="28" y="29" width="4" height="4" fill="var(--accent-ink)"/>
+      </svg>
+      <div>
+        <h1>Načrtovalec nakladanja palet</h1>
+        <p>Razpored palet, vrstni red nakladanja in osne obremenitve za eno vozilo</p>
+      </div>
+    </div>
+    <div class="meta" id="metaLine"></div>
+  </header>
+
+  <main class="layout">
+    <div class="col">
+      <section class="card" aria-labelledby="vehH">
+        <div class="card-h"><h2 id="vehH">Vozilo</h2></div>
+        <label class="field" for="vehPreset"><span>Vrsta vozila</span>
+          <select id="vehPreset">
+            <option value="semi">Polpriklopnik 13,6 m · 40 t</option>
+            <option value="rigid">Solo tovornjak 7,2 m · 18 t</option>
+          </select>
+        </label>
+        <p class="spec" id="vehSpec"></p>
+        <details class="vdata" id="vehDetails">
+          <summary>Podatki vozila</summary>
+          <div id="vehFields"></div>
+          <p class="hint">Največje osne obremenitve preberite s tablic vozila, obremenitve osi praznega vozila pa s tehtalnega lista. Upoštevajte najnižje omejitve na celotni poti. <button type="button" class="link" id="vehReset">Ponastavi privzete vrednosti</button></p>
+        </details>
+      </section>
+
+      <section class="card" aria-labelledby="cargoH">
+        <div class="card-h">
+          <h2 id="cargoH">Tovor</h2>
+          <span class="tag" id="exampleTag">Primer</span>
+          <span class="spacer"></span>
+          <button type="button" class="link" id="clearBtn">Počisti vse</button>
+        </div>
+        <div class="lines" id="lines"></div>
+        <div class="addrow" id="addRow"></div>
+        <div class="totals" id="cargoTotals"></div>
+      </section>
+
+      <section class="card" aria-labelledby="optH">
+        <div class="card-h"><h2 id="optH">Možnosti nakladanja</h2></div>
+        <div class="seg" role="radiogroup" aria-label="Razporeditev po dolžini vozila">
+          <label class="segopt" for="layCompact">
+            <input type="radio" name="layout" id="layCompact" value="compact">
+            <span>
+              <svg viewBox="0 0 70 16" width="70" height="16" aria-hidden="true"><rect x=".75" y=".75" width="68.5" height="14.5" rx="1.5" fill="none" stroke="var(--rule-strong)" stroke-width="1.5"/><g fill="var(--accent)"><rect x="3" y="2.5" width="5" height="5"/><rect x="3" y="8.5" width="5" height="5"/><rect x="9" y="2.5" width="5" height="5"/><rect x="9" y="8.5" width="5" height="5"/><rect x="15" y="2.5" width="5" height="5"/><rect x="15" y="8.5" width="5" height="5"/><rect x="21" y="2.5" width="5" height="5"/><rect x="21" y="8.5" width="5" height="5"/><rect x="27" y="2.5" width="5" height="5"/><rect x="27" y="8.5" width="5" height="5"/></g></svg>
+              <b>Strnjeno</b><small>Polne vrste od čelne stene, prosti prostor zadaj</small>
+            </span>
+          </label>
+          <label class="segopt" for="laySpread">
+            <input type="radio" name="layout" id="laySpread" value="spread">
+            <span>
+              <svg viewBox="0 0 70 16" width="70" height="16" aria-hidden="true"><rect x=".75" y=".75" width="68.5" height="14.5" rx="1.5" fill="none" stroke="var(--rule-strong)" stroke-width="1.5"/><g fill="var(--accent)"><rect x="3" y="2.5" width="5" height="5"/><rect x="3" y="8.5" width="5" height="5"/><rect x="9" y="5.5" width="5" height="5"/><rect x="15" y="2.5" width="5" height="5"/><rect x="15" y="8.5" width="5" height="5"/><rect x="21" y="5.5" width="5" height="5"/><rect x="27" y="2.5" width="5" height="5"/><rect x="27" y="8.5" width="5" height="5"/><rect x="33" y="5.5" width="5" height="5"/><rect x="39" y="2.5" width="5" height="5"/><rect x="39" y="8.5" width="5" height="5"/><rect x="45" y="5.5" width="5" height="5"/><rect x="51" y="2.5" width="5" height="5"/><rect x="51" y="8.5" width="5" height="5"/><rect x="57" y="5.5" width="5" height="5"/><rect x="63" y="5.5" width="5" height="5"/></g></svg>
+              <b>Razporejeno</b><small>Tesne vrste po celi dolžini, nekatere z eno paleto na sredini</small>
+            </span>
+          </label>
+        </div>
+        <div class="vgrid opts2">
+          <label class="vfield" for="reserveM"><span>Rezerva prostora zadaj</span><span class="inwrap"><input type="text" class="numin" inputmode="decimal" autocomplete="off" id="reserveM"><i>m</i></span></label>
+          <label class="vfield" for="reserveT"><span>Masa tovora za ta prostor</span><span class="inwrap"><input type="text" class="numin" inputmode="decimal" autocomplete="off" id="reserveT"><i>t</i></span></label>
+        </div>
+        <p class="hint">Prostor pri zadnjih vratih za drug tovor. Masa ni obvezna; če jo vnesete, jo upošteva tudi preverjanje osnih obremenitev.</p>
+        <label class="field options" for="stackMode"><span>Zlaganje zložljivih palet v dve višini</span>
+          <select id="stackMode">
+            <option value="needed">Samo ko zmanjka prostora na tleh</option>
+            <option value="always">Kadar je mogoče</option>
+            <option value="never">Nikoli</option>
+          </select>
+        </label>
+      </section>
+    </div>
+
+    <div class="col">
+      <section class="card" aria-labelledby="sumH">
+        <h2 id="sumH" hidden>Rezultat</h2>
+        <p class="banner" id="exampleBanner">To je primer tovora. Uredite seznam tovora in načrtujte svojega.</p>
+        <div class="status" id="status"></div>
+        <div class="figs" id="figs"></div>
+        <div class="axles" id="axles"></div>
+        <div class="balance" id="balance"></div>
+        <ul class="notes" id="notes"></ul>
+      </section>
+
+      <section class="card" aria-labelledby="planH">
+        <div class="card-h">
+          <h2 id="planH">Načrt nakladanja</h2>
+          <span class="spacer"></span>
+          <div class="legend" id="legend"></div>
+        </div>
+        <div class="svgwrap"><svg id="planSvg" role="img" aria-label="Stranski pogled in tloris naloženega vozila" xmlns="http://www.w3.org/2000/svg"></svg></div>
+        <div class="stepper">
+          <button type="button" class="iconbtn" id="stFirst" aria-label="Prazno vozilo"></button>
+          <button type="button" class="iconbtn" id="stPrev" aria-label="Prejšnji korak"></button>
+          <button type="button" class="iconbtn" id="stPlay" aria-label="Predvajaj nakladanje"></button>
+          <button type="button" class="iconbtn" id="stNext" aria-label="Naslednji korak"></button>
+          <button type="button" class="iconbtn" id="stLast" aria-label="Prikaži celoten tovor"></button>
+          <input type="range" id="stRange" min="0" max="0" value="0" aria-label="Korak nakladanja">
+          <span class="steplabel" id="stLabel"></span>
+        </div>
+        <div class="stepnow" id="stepNow" aria-live="polite"></div>
+      </section>
+
+      <section class="card" aria-labelledby="ordH">
+        <div class="card-h">
+          <h2 id="ordH">Vrstni red nakladanja</h2>
+          <span class="muted" style="font-size:13.5px">Nakladajte od čelne stene proti vratom</span>
+          <span class="spacer"></span>
+          <button type="button" class="btn small" id="copyBtn">Kopiraj kot besedilo</button>
+        </div>
+        <ol class="rows" id="stepsList"></ol>
+        <div class="copybox" id="copyBox" hidden>
+          <p class="hint" style="margin:0 0 6px">Kopiranje tukaj ni na voljo. Označite besedilo spodaj in ga kopirajte.</p>
+          <textarea id="copyText" readonly aria-label="Načrt nakladanja kot besedilo"></textarea>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer>
+    Pripomoček za načrtovanje. Osne obremenitve so ocenjene iz vnesenih podatkov vozila; preverite jih na tehtnici in s podatki na tablicah vozila.
+    Načrt ne izračuna sil za pritrjevanje. Vsako paleto zavarujte pred zdrsom in prevrnitvijo (EN 12195-1, Evropske smernice dobre prakse za varovanje tovora v cestnem prometu).
+    Za tovor sta še naprej odgovorna voznik in prevoznik.
+  </footer>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/*PLANNER-START*/
+const VEHICLE_PRESETS = {
+  semi: {
+    type: 'semi', name: 'Polpriklopnik 13,6 m',
+    deckL: 13600, deckW: 2450, deckH: 2700,
+    kingpin: 1.20, kpAxles: 7.70, wheelbase: 3.60, fwLead: 0.60, trailerAxles: 3, axleSpacing: 1.31,
+    tare: { steer: 5.5, drive: 4.5, trailer: 4.8 },
+    lim: { steer: 7.1, drive: 11.5, trailer: 24.0, gross: 40.0 },
+    minDrivePct: 25, minSteerPct: 0
+  },
+  rigid: {
+    type: 'rigid', name: 'Solo tovornjak 7,2 m',
+    deckL: 7200, deckW: 2450, deckH: 2500,
+    frontAxle: -0.60, rearAxle: 4.60,
+    tare: { steer: 4.5, drive: 2.6 },
+    lim: { steer: 7.1, drive: 11.5, gross: 18.0 },
+    minDrivePct: 25, minSteerPct: 20
+  }
+};
+
+function clone(o) { return JSON.parse(JSON.stringify(o)); }
+function fpKey(l, w) { return Math.max(l, w) + 'x' + Math.min(l, w); }
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* ---------- Axle loads ---------- */
+// Pt: payload in tonnes, xc: payload centre of gravity in m behind the headboard
+function axleLoads(v, Pt, xc) {
+  if (v.type === 'semi') {
+    const k = v.kingpin, a = v.kingpin + v.kpAxles;
+    const Rk = Pt > 0 ? Pt * (a - xc) / (a - k) : 0;   // load on the kingpin
+    const Rt = Pt - Rk;                                 // load on the trailer axle group
+    const steer = v.tare.steer + Rk * v.fwLead / v.wheelbase;
+    const drive = v.tare.drive + Rk * (v.wheelbase - v.fwLead) / v.wheelbase;
+    const trailer = v.tare.trailer + Rt;
+    return { steer, drive, trailer, kingpin: Rk, gross: steer + drive + trailer };
+  }
+  const span = v.rearAxle - v.frontAxle;
+  const rear = Pt > 0 ? Pt * (xc - v.frontAxle) / span : 0;
+  const steer = v.tare.steer + (Pt - rear);
+  const drive = v.tare.drive + rear;
+  return { steer, drive, gross: steer + drive };
+}
+
+function axleChecks(v, L) {
+  const semi = v.type === 'semi';
+  const out = [
+    { key: 'steer', label: semi ? 'Krmilna os' : 'Prednja os', load: L.steer, max: v.lim.steer,
+      min: v.minSteerPct > 0 ? L.gross * v.minSteerPct / 100 : null, minPct: v.minSteerPct },
+    { key: 'drive', label: semi ? 'Pogonska os' : 'Zadnja os', load: L.drive, max: v.lim.drive,
+      min: v.minDrivePct > 0 ? L.gross * v.minDrivePct / 100 : null, minPct: v.minDrivePct }
+  ];
+  if (semi) out.push({ key: 'trailer', label: 'Osi polpriklopnika', load: L.trailer, max: v.lim.trailer, min: null });
+  out.push({ key: 'gross', label: 'Skupna masa', load: L.gross, max: v.lim.gross, min: null });
+  for (const c of out) {
+    c.over = c.load > c.max + 1e-6;
+    c.under = c.min != null && c.load < c.min - 1e-6;
+    c.ok = !c.over && !c.under;
+    c.ratio = c.max > 0 ? c.load / c.max : 0;
+  }
+  return out;
+}
+
+// Cargo planned for the reserved rear space (extra = { t, x }) is added as a fixed load
+function combine(Pt, xc, extra) {
+  if (!extra || !(extra.t > 0)) return [Pt, xc];
+  const T = Pt + extra.t;
+  return [T, (Pt * xc + extra.t * extra.x) / T];
+}
+function loadsWith(v, Pt, xc, extra) { const c = combine(Pt, xc, extra); return axleLoads(v, c[0], c[1]); }
+
+// Smallest relative margin across all axle constraints (negative = a limit is broken)
+function minSlack(v, Pt, x, extra) {
+  const cs = axleChecks(v, loadsWith(v, Pt, x, extra));
+  let s = Infinity;
+  for (const c of cs) {
+    if (c.key === 'gross') continue;
+    s = Math.min(s, (c.max - c.load) / c.max);
+    if (c.min != null && c.min > 0) s = Math.min(s, (c.load - c.min) / c.min);
+  }
+  return s;
+}
+
+// Range of payload centre of gravity (m from headboard) that keeps every axle legal
+function cogWindow(v, Pt, D, extra) {
+  if (!(Pt > 0)) return { best: D / 2, lo: 0, hi: D, feasible: true, slack: 1 };
+  const f = x => minSlack(v, Pt, x, extra);
+  let lo = 0, hi = D;
+  for (let i = 0; i < 90; i++) {
+    const m1 = lo + (hi - lo) / 3, m2 = hi - (hi - lo) / 3;
+    if (f(m1) < f(m2)) lo = m1; else hi = m2;
+  }
+  const best = (lo + hi) / 2, sb = f(best);
+  if (sb < 0) return { best, lo: best, hi: best, feasible: false, slack: sb };
+  let xlo = 0, xhi = D;
+  if (f(0) < 0) {
+    let a = 0, b = best;
+    for (let i = 0; i < 60; i++) { const m = (a + b) / 2; if (f(m) < 0) a = m; else b = m; }
+    xlo = b;
+  }
+  if (f(D) < 0) {
+    let a = best, b = D;
+    for (let i = 0; i < 60; i++) { const m = (a + b) / 2; if (f(m) < 0) b = m; else a = m; }
+    xhi = a;
+  }
+  return { best, lo: xlo, hi: xhi, feasible: true, slack: sb };
+}
+
+/* ---------- Cargo ---------- */
+function expandPallets(lines, v) {
+  const pallets = [], rejected = [];
+  let id = 0;
+  lines.forEach((ln, li) => {
+    const l = +ln.l, w = +ln.w, h = +ln.h, kg = +ln.kg, qty = Math.min(200, Math.floor(+ln.qty));
+    if (!(l > 0 && w > 0 && h > 0 && kg >= 0 && qty > 0)) return;
+    for (let i = 0; i < qty; i++) {
+      const p = { id: id++, li, lineId: ln.id, label: String(ln.label || '').trim() || 'Paleta', l, w, h, kg, stack: !!ln.stack, color: ln.color };
+      const big = Math.max(l, w), small = Math.min(l, w);
+      let reason = null;
+      if (h > v.deckH) reason = 'višja od tovornega prostora';
+      else if (!(small <= v.deckW && big <= v.deckL)) reason = 'večja od tovornega prostora';
+      if (reason) rejected.push({ pallet: p, reason }); else pallets.push(p);
+    }
+  });
+  return { pallets, rejected };
+}
+
+// Pairs of stackable pallets with the same footprint: heaviest at the bottom, lightest on top
+function stackPairs(pallets, H) {
+  const groups = new Map();
+  for (const p of pallets) {
+    if (!p.stack) continue;
+    const k = fpKey(p.l, p.w);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(p);
+  }
+  const pairs = [];
+  for (const arr of groups.values()) {
+    arr.sort((a, b) => b.kg - a.kg || a.id - b.id);
+    const used = new Set();
+    for (let i = 0; i < arr.length; i++) {
+      if (used.has(i)) continue;
+      for (let j = arr.length - 1; j > i; j--) {
+        if (used.has(j)) continue;
+        if (arr[i].h + arr[j].h <= H) { used.add(i); used.add(j); pairs.push({ bottom: arr[i], top: arr[j] }); break; }
+      }
+    }
+  }
+  pairs.sort((a, b) => a.top.kg - b.top.kg || (b.bottom.l * b.bottom.w) - (a.bottom.l * a.bottom.w) || a.bottom.id - b.bottom.id);
+  return pairs;
+}
+
+function mkUnit(uid, ps) {
+  const b = ps[0];
+  return {
+    uid, pallets: ps, l: b.l, w: b.w, fp: fpKey(b.l, b.w), li: b.li, color: b.color,
+    kg: ps.reduce((s, p) => s + p.kg, 0), h: ps.reduce((s, p) => s + p.h, 0),
+    stack: ps.length > 1, area: b.l * b.w
+  };
+}
+
+function buildUnits(pallets, pairs, k) {
+  const inStack = new Set(), units = [];
+  let uid = 0;
+  for (let i = 0; i < k && i < pairs.length; i++) {
+    const { bottom, top } = pairs[i];
+    inStack.add(bottom.id); inStack.add(top.id);
+    units.push(mkUnit(uid++, [bottom, top]));
+  }
+  for (const p of pallets) if (!inStack.has(p.id)) units.push(mkUnit(uid++, [p]));
+  return units;
+}
+
+/* ---------- Floor packing (maximal rectangles, front-left first) ---------- */
+// Coordinates in mm: x = across the deck from the left (driver) side, y = along the deck from the headboard
+function splitFree(free, r, minDim) {
+  const out = [];
+  for (const f of free) {
+    if (r.x >= f.x + f.w || r.x + r.w <= f.x || r.y >= f.y + f.h || r.y + r.h <= f.y) { out.push(f); continue; }
+    if (r.x > f.x) out.push({ x: f.x, y: f.y, w: r.x - f.x, h: f.h });
+    if (r.x + r.w < f.x + f.w) out.push({ x: r.x + r.w, y: f.y, w: f.x + f.w - r.x - r.w, h: f.h });
+    if (r.y > f.y) out.push({ x: f.x, y: f.y, w: f.w, h: r.y - f.y });
+    if (r.y + r.h < f.y + f.h) out.push({ x: f.x, y: r.y + r.h, w: f.w, h: f.y + f.h - r.y - r.h });
+  }
+  const cand = out.filter(q => q.w >= minDim && q.h >= minDim);
+  const res = [];
+  for (let i = 0; i < cand.length; i++) {
+    const a = cand[i];
+    let drop = false;
+    for (let j = 0; j < cand.length; j++) {
+      if (i === j) continue;
+      const b = cand[j];
+      if (a.x >= b.x && a.y >= b.y && a.x + a.w <= b.x + b.w && a.y + a.h <= b.y + b.h) {
+        const same = a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;
+        if (!same || j < i) { drop = true; break; }
+      }
+    }
+    if (!drop) res.push(a);
+  }
+  return res;
+}
+
+function packOnce(units, W, D, sortFn, policy, minDim) {
+  const order = units.slice().sort(sortFn);
+  let free = [{ x: 0, y: 0, w: W, h: D }];
+  const placed = [], unplaced = [];
+  for (const u of order) {
+    const big = Math.max(u.l, u.w), small = Math.min(u.l, u.w);
+    let orients;
+    if (big === small) orients = [{ w: big, h: big }];
+    else {
+      const along = { w: small, h: big }, across = { w: big, h: small };
+      const pol = policy[u.fp] || 'free';
+      if (pol === 'along') orients = small <= W ? [along] : [across];
+      else if (pol === 'across') orients = big <= W ? [across] : [along];
+      else orients = [across, along];
+    }
+    let best = null;
+    for (const o of orients) {
+      if (o.w > W || o.h > D) continue;
+      for (const r of free) {
+        if (o.w <= r.w && o.h <= r.h) {
+          const top = r.y + o.h;
+          if (!best || top < best.top || (top === best.top && r.x < best.x)) best = { x: r.x, y: r.y, w: o.w, h: o.h, top };
+        }
+      }
+    }
+    if (!best) { unplaced.push(u); continue; }
+    placed.push({ unit: u, x: best.x, y: best.y, w: best.w, h: best.h });
+    free = splitFree(free, best, minDim);
+  }
+  let ldm = 0;
+  for (const p of placed) ldm = Math.max(ldm, p.y + p.h);
+  return { placed, unplaced, ldm };
+}
+
+const tieBreak = (a, b) => a.li - b.li || b.kg - a.kg || a.uid - b.uid;
+const maxSide = u => Math.max(u.l, u.w), minSide = u => Math.min(u.l, u.w), dens = u => u.kg / u.area;
+const SORTS = [
+  (a, b) => b.area - a.area || maxSide(b) - maxSide(a) || tieBreak(a, b),
+  (a, b) => maxSide(b) - maxSide(a) || b.area - a.area || tieBreak(a, b),
+  (a, b) => minSide(b) - minSide(a) || b.area - a.area || tieBreak(a, b),
+  (a, b) => a.li - b.li || b.area - a.area || tieBreak(a, b),
+  (a, b) => dens(a) - dens(b) || b.area - a.area || tieBreak(a, b),
+  (a, b) => dens(b) - dens(a) || b.area - a.area || tieBreak(a, b)
+];
+
+function policyCombos(fps, limit) {
+  const opts = ['free', 'along', 'across'];
+  if (!fps.length) return [{}];
+  const total = Math.pow(3, fps.length);
+  const combos = [];
+  if (total <= limit) {
+    for (let n = 0; n < total; n++) {
+      const c = {}; let m = n;
+      for (const f of fps) { c[f] = opts[m % 3]; m = Math.floor(m / 3); }
+      combos.push(c);
+    }
+  } else {
+    for (const o of opts) { const c = {}; fps.forEach(f => { c[f] = o; }); combos.push(c); }
+    const rnd = mulberry32(7);
+    while (combos.length < limit) { const c = {}; fps.forEach(f => { c[f] = opts[Math.floor(rnd() * 3)]; }); combos.push(c); }
+  }
+  return combos;
+}
+
+function searchLayouts(units, W, D, quick) {
+  if (!units.length) return [{ placed: [], unplaced: [], ldm: 0 }];
+  const fps = [...new Set(units.filter(u => u.l !== u.w).map(u => u.fp))];
+  const combos = policyCombos(fps, quick ? 9 : 27);
+  const sorts = quick ? SORTS.slice(0, 4) : SORTS;
+  const minDim = Math.min(...units.map(u => Math.min(u.l, u.w)));
+  const out = [], seen = new Set();
+  for (const s of sorts) {
+    for (const c of combos) {
+      const r = packOnce(units, W, D, s, c, minDim);
+      if (quick && r.unplaced.length === 0) return [r];
+      const sig = r.placed.map(p => p.unit.fp + '@' + p.x + ',' + p.y + ',' + p.w).sort().join('|');
+      if (seen.has(sig)) continue;
+      seen.add(sig);
+      out.push(r);
+    }
+  }
+  out.sort((a, b) => b.placed.length - a.placed.length || a.ldm - b.ldm);
+  return out;
+}
+
+/* ---------- Spread layout: tight rows, some with a single pallet in the centre ---------- */
+// Pallets of one size go in rows across the deck. Every row touches the next (no gaps).
+// To stretch the load over the usable length, some rows carry fewer pallets (often one, centred):
+// the classic 2-1-2 pattern. Heaviest goods are stretched first so weight per metre evens out.
+function spreadGroups(units, W, Davail) {
+  const gmap = new Map();
+  for (const u of units) { if (!gmap.has(u.fp)) gmap.set(u.fp, []); gmap.get(u.fp).push(u); }
+  return [...gmap.values()].map(us => {
+    const u = us[0], big = Math.max(u.l, u.w), small = Math.min(u.l, u.w);
+    const opts = [];
+    const add = (across, depth) => { const cap = Math.floor(W / across); if (cap >= 1 && depth <= Davail) opts.push({ across, depth, cap }); };
+    add(big, small);                     // long side across the deck
+    if (big !== small) add(small, big);  // long side along the deck
+    return {
+      units: us, n: us.length, opts, fp: u.fp,
+      kg: us.reduce((s, x) => s + x.kg, 0), li: Math.min(...us.map(x => x.li)),
+      dens: us.reduce((s, x) => s + x.kg, 0) / (us.length * u.area)
+    };
+  });
+}
+function spreadMinLength(units, W, Davail) {
+  let total = 0;
+  for (const g of spreadGroups(units, W, Davail)) {
+    if (!g.opts.length) return Infinity;
+    total += Math.min(...g.opts.map(o => Math.ceil(g.n / o.cap) * o.depth));
+  }
+  return total;
+}
+function permutations(arr) {
+  if (arr.length <= 1) return [arr.slice()];
+  const out = [];
+  arr.forEach((x, i) => { for (const p of permutations(arr.filter((_, j) => j !== i))) out.push([x, ...p]); });
+  return out;
+}
+function spreadLayouts(units, W, Davail) {
+  if (!units.length) return [];
+  const groups = spreadGroups(units, W, Davail), G = groups.length;
+  if (groups.some(g => !g.opts.length)) return [];
+  // orientation choices per group
+  let combos = [[]];
+  const nCombos = groups.reduce((p, g) => p * g.opts.length, 1);
+  if (nCombos <= 16) {
+    for (const g of groups) combos = combos.flatMap(c => g.opts.map(o => [...c, o]));
+  } else {
+    combos = [
+      groups.map(g => g.opts[0]),
+      groups.map(g => g.opts[g.opts.length - 1]),
+      groups.map(g => g.opts.reduce((a, b) => Math.ceil(g.n / a.cap) * a.depth <= Math.ceil(g.n / b.cap) * b.depth ? a : b))
+    ];
+  }
+  // order of the goods along the deck
+  const idx = groups.map((_, i) => i);
+  const orders = G <= 3 ? permutations(idx) : [
+    idx.slice().sort((a, b) => groups[a].li - groups[b].li),
+    idx.slice().sort((a, b) => groups[b].dens - groups[a].dens),
+    idx.slice().sort((a, b) => groups[a].dens - groups[b].dens),
+    idx.slice().sort((a, b) => groups[b].kg - groups[a].kg)
+  ];
+  const out = [];
+  for (const combo of combos) {
+    const rows = groups.map((g, i) => Math.ceil(g.n / combo[i].cap));
+    let len = rows.reduce((s, r, i) => s + r * combo[i].depth, 0);
+    if (len > Davail) continue;
+    // stretch: add a row to the group with the most weight per metre of row, while it still fits
+    for (;;) {
+      let bi = -1, bd = -1;
+      for (let i = 0; i < G; i++) {
+        if (rows[i] >= groups[i].n || len + combo[i].depth > Davail) continue;
+        const d = groups[i].kg / (rows[i] * combo[i].depth);
+        if (d > bd) { bd = d; bi = i; }
+      }
+      if (bi < 0) break;
+      rows[bi]++; len += combo[bi].depth;
+    }
+    // where the fuller rows go: evenly from a full first row, evenly from a single first row,
+    // or as one block slid along the goods (13 positions), so the load centre can move fore and aft
+    const seen = new Set();
+    for (const ord of orders) {
+      for (let pattern = 0; pattern < 15; pattern++) {
+        const lay = buildRowLayout(groups, combo, rows, ord, W, pattern);
+        if (seen.has(lay.sig)) continue;
+        seen.add(lay.sig);
+        out.push(lay);
+      }
+    }
+  }
+  return out;
+}
+function buildRowLayout(groups, combo, rows, order, W, pattern) {
+  const placed = [], sig = [];
+  let y = 0, singles = 0, partial = 0;
+  for (const gi of order) {
+    const g = groups[gi], o = combo[gi], r = rows[gi];
+    const base = Math.floor(g.n / r), extra = g.n % r;
+    const fuller = j => {
+      if (pattern >= 2) { const s = Math.round((pattern - 2) / 12 * (r - extra)); return j >= s && j < s + extra; }
+      const jj = pattern === 0 ? r - 1 - j : j;
+      return Math.floor((jj + 1) * extra / r) > Math.floor(jj * extra / r);
+    };
+    let k0 = 0;
+    for (let j = 0; j < r; j++) {
+      const k = base + (fuller(j) ? 1 : 0);
+      const x0 = Math.round((W - k * o.across) / 2);
+      for (let q = 0; q < k; q++) placed.push({ unit: g.units[k0++], x: x0 + q * o.across, y, w: o.across, h: o.depth });
+      if (k < o.cap) partial++;
+      if (k === 1 && o.cap > 1) singles++;
+      sig.push(g.fp + ':' + o.across + ':' + k);
+      y += o.depth;
+    }
+  }
+  return { placed, unplaced: [], ldm: y, singles, partial, sig: sig.join('|') };
+}
+
+/* ---------- Weight balancing ---------- */
+// Swap pallets of the same footprint between slots so the load centre lands where axle margins are largest,
+// then (compact layout only) move the whole load back from the headboard if the front axles are still too heavy.
+function optimizeLayout(layout, v, opt) {
+  const W = v.deckW, Dm = v.deckL / 1000, half = W / 2000;
+  const extra = opt.extra, spread = !!opt.spread;
+  const ys = layout.placed.map(p => p.y);
+  const slots = layout.placed.map((p, i) => ({
+    x: p.x, y: ys[i], w: p.w, h: p.h, cx: (p.x + p.w / 2) / 1000, cy: (ys[i] + p.h / 2) / 1000, fp: p.unit.fp, unit: p.unit
+  }));
+  const endY = slots.reduce((m, s) => Math.max(m, s.y + s.h), 0);
+  const Pkg = slots.reduce((s, q) => s + q.unit.kg, 0), Pt = Pkg / 1000;
+  // the allowed load-centre range depends only on the payload, so it is cached across candidate layouts
+  const cache = opt.winCache || (opt.winCache = new Map());
+  if (!cache.has(Pkg)) cache.set(Pkg, cogWindow(v, Pt, Dm, extra));
+  const win = cache.get(Pkg);
+  let shift = 0, Ml = 0, Mt = 0;
+  if (Pkg > 0) {
+    for (const s of slots) { Ml += s.unit.kg * s.cy; Mt += s.unit.kg * (s.cx - half); }
+    const tx = win.best;
+    const E = (ml, mt) => { const a = ml / Pkg - tx, b = mt / Pkg; return a * a + 9 * b * b; };
+    const groups = {};
+    slots.forEach((s, i) => { (groups[s.fp] = groups[s.fp] || []).push(i); });
+    const glist = Object.values(groups).filter(g => g.length > 1);
+    let cur = E(Ml, Mt);
+    for (let iter = 0; iter < 400; iter++) {
+      let best = null, bestE = cur - 1e-10;
+      for (const g of glist) {
+        for (let a = 0; a < g.length; a++) {
+          const si = slots[g[a]];
+          for (let b = a + 1; b < g.length; b++) {
+            const sj = slots[g[b]];
+            const dw = si.unit.kg - sj.unit.kg;
+            if (dw === 0) continue;
+            const nMl = Ml + dw * (sj.cy - si.cy), nMt = Mt + dw * (sj.cx - si.cx);
+            const e = E(nMl, nMt);
+            if (e < bestE) { bestE = e; best = [g[a], g[b], nMl, nMt]; }
+          }
+        }
+      }
+      if (!best) break;
+      const [i, j, nMl, nMt] = best;
+      const t = slots[i].unit; slots[i].unit = slots[j].unit; slots[j].unit = t;
+      Ml = nMl; Mt = nMt; cur = bestE;
+    }
+    const xc0 = Ml / Pkg;
+    const freeRear = (opt.Davail - endY) / 1000;
+    const want = Math.min(0.03, win.slack);
+    const sl0 = minSlack(v, Pt, xc0, extra);
+    if (!spread && win.feasible && xc0 < win.best && sl0 < want - 1e-9 && freeRear >= 0.05) {
+      let bestS = 0, bestSl = sl0;
+      const steps = Math.floor(freeRear / 0.05 + 1e-9);
+      for (let i = 1; i <= steps; i++) {
+        const s = i * 0.05, sl = minSlack(v, Pt, xc0 + s, extra);
+        if (sl >= want) { bestS = s; break; }
+        if (sl > bestSl) { bestSl = sl; bestS = s; }
+      }
+      shift = Math.round(bestS * 100) / 100;
+    }
+  }
+  const xc = Pkg > 0 ? Ml / Pkg + shift : 0;
+  const yOff = Pkg > 0 ? Mt / Pkg : 0;
+  const L = loadsWith(v, Pt, xc, extra);
+  const checks = axleChecks(v, L);
+  const ms = minSlack(v, Pt, xc, extra);
+  const ldm = layout.placed.length ? endY / 1000 + shift : 0;
+  const feasible = checks.every(c => c.ok);
+  const count = slots.reduce((s, q) => s + q.unit.pallets.length, 0);
+  const penalty = 3 * Math.max(0, 0.08 - ms);
+  const singles = layout.singles || 0, partial = layout.partial || 0;
+  return { slots, Pkg, Pt, win, shift, xc, yOff, L, checks, ms, ldm, feasible, count, singles, partial,
+           // spread: cover the usable length, but prefer pairs over many single pallets when the difference is small
+           cost: spread ? (opt.Davail - endY) / 1000 + 0.05 * singles + 0.01 * partial + penalty : ldm + penalty,
+           unplaced: layout.unplaced };
+}
+
+function better(a, b) {
+  if (a.count !== b.count) return a.count > b.count;
+  if (a.feasible !== b.feasible) return a.feasible;
+  return a.cost < b.cost - 1e-9;
+}
+
+function sideOf(s, W) {
+  const c = s.x + s.w / 2, gapL = s.x, gapR = W - (s.x + s.w);
+  if (s.w >= W * 0.8) return 'čez celo širino';
+  if (gapL <= 60) return 'levo';
+  if (gapR <= 60) return 'desno';
+  if (Math.abs(c - W / 2) <= W * 0.08) return 'na sredini';
+  return c < W / 2 ? 'levo od sredine' : 'desno od sredine';
+}
+
+function planLoad(input) {
+  const v = input.vehicle, W = v.deckW, D = v.deckL, H = v.deckH;
+  const reserveMm = Math.max(0, Math.min(D, Math.round((+input.reserveM || 0) * 1000)));
+  const Davail = D - reserveMm;                       // usable length for this cargo
+  const extraT = reserveMm > 0 ? Math.max(0, +input.reserveT || 0) : 0;
+  const extra = extraT > 0 ? { t: extraT, x: (D - reserveMm / 2) / 1000 } : null;
+  const spread = input.layout === 'spread';
+  const { pallets, rejected } = expandPallets(input.lines, v);
+  const pairs = input.stacking === 'never' ? [] : stackPairs(pallets, H);
+  let k = 0;
+  const packFits = kk => searchLayouts(buildUnits(pallets, pairs, kk), W, Davail, true)[0].unplaced.length === 0;
+  const rowsFit = kk => spreadMinLength(buildUnits(pallets, pairs, kk), W, Davail) <= Davail;
+  const minK = test => {   // fewest double stacks that make the load fit, or -1
+    if (test(0)) return 0;
+    if (!test(pairs.length)) return -1;
+    let lo = 0, hi = pairs.length;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (test(m)) hi = m; else lo = m; }
+    return hi;
+  };
+  if (pallets.length && pairs.length) {
+    if (input.stacking === 'always') k = pairs.length;
+    else {
+      k = spread ? minK(rowsFit) : -1;
+      if (k < 0) k = minK(packFits);
+      if (k < 0) k = pairs.length;
+    }
+  }
+  const units = buildUnits(pallets, pairs, k);
+  let best = null, spreadFallback = false;
+  const winCache = new Map();
+  const consider = (lay, isSpread) => {
+    const ev = optimizeLayout(lay, v, { Davail, spread: isSpread, extra, winCache });
+    if (!best || better(ev, best)) best = ev;
+  };
+  if (spread) {
+    const rowLayouts = spreadLayouts(units, W, Davail);
+    for (const lay of rowLayouts) consider(lay, true);
+    if (!rowLayouts.length) spreadFallback = units.length > 0;
+  }
+  if (!best) for (const lay of searchLayouts(units, W, Davail, false).slice(0, 10)) consider(lay, false);
+  const sh = Math.round(best.shift * 1000);
+  const placed = best.slots.map(s => ({ x: s.x, y: s.y + sh, w: s.w, h: s.h, unit: s.unit }));
+  placed.sort((a, b) => a.y - b.y || a.x - b.x);
+  placed.forEach((s, i) => {
+    s.step = i + 1;
+    s.along = s.w === s.h ? null : s.h > s.w;
+    s.side = sideOf(s, W);
+  });
+  const rows = [];
+  for (const s of placed) {
+    const last = rows[rows.length - 1];
+    if (last && Math.abs(last.y0 - s.y) < 1) { last.items.push(s); last.y1 = Math.max(last.y1, s.y + s.h); }
+    else rows.push({ y0: s.y, y1: s.y + s.h, items: [s] });
+  }
+  return {
+    vehicle: v, placed, rows,
+    unplaced: best.unplaced.flatMap(u => u.pallets), rejected, stacks: k,
+    shift: best.shift, ldm: best.ldm,
+    floorUse: placed.reduce((s, q) => s + q.w * q.h, 0) / (W * D),
+    Pkg: best.Pkg, Pt: best.Pt, xc: best.xc, yOff: best.yOff, win: best.win,
+    L: best.L, checks: best.checks, feasible: best.feasible,
+    totalPallets: pallets.length + rejected.length, loadedPallets: best.count,
+    layout: spread ? 'spread' : 'compact', singles: best.singles, partial: best.partial, spreadFallback,
+    reserveM: reserveMm / 1000, extraT, extra, Davail: Davail / 1000
+  };
+}
+/*PLANNER-END*/
+
+/* ======================= UI ======================= */
+const $ = s => document.querySelector(s);
+const LS_KEY = 'pallet-load-planner:v1';
+const COLORS = ['#6aa6d8', '#e3b45a', '#7cc59a', '#c399d9', '#ee8f7d', '#d3c457', '#66c1bd', '#a9b7c6'];
+const ADD_TYPES = [
+  { btn: 'EUR 1200×800', label: 'EUR paleta', l: 1200, w: 800, h: 1200, kg: 500 },
+  { btn: 'Industrijska 1200×1000', label: 'Industrijska paleta', l: 1200, w: 1000, h: 1200, kg: 600 },
+  { btn: 'Pol palete 800×600', label: 'Polovična paleta', l: 800, w: 600, h: 1000, kg: 250 },
+  { btn: '1000×1000', label: 'Paleta 1000×1000', l: 1000, w: 1000, h: 1200, kg: 600 },
+  { btn: 'Poljubna mera', label: 'Poljubna paleta', l: 1200, w: 1200, h: 1000, kg: 400 }
+];
+const EXAMPLE = [
+  { label: 'Pijače', l: 1200, w: 800, h: 1500, kg: 780, qty: 12, stack: false },
+  { label: 'Talne ploščice', l: 1200, w: 1000, h: 950, kg: 1050, qty: 6, stack: false },
+  { label: 'Embalaža', l: 1200, w: 800, h: 1100, kg: 240, qty: 8, stack: true },
+  { label: 'Rezervni deli', l: 800, w: 600, h: 900, kg: 310, qty: 4, stack: false }
+];
+const VEH_FIELDS = {
+  semi: [
+    { group: 'Tovorni prostor, notranje mere', fields: [['deckL', 'Dolžina', 'mm'], ['deckW', 'Širina', 'mm'], ['deckH', 'Višina', 'mm']] },
+    { group: 'Geometrija', fields: [['kingpin', 'Vlečni zatič od čelne stene', 'm'], ['kpAxles', 'Vlečni zatič do sredine osi polpriklopnika', 'm'], ['wheelbase', 'Medosna razdalja vlačilca', 'm'], ['fwLead', 'Sedlo pred pogonsko osjo', 'm']] },
+    { group: 'Osne obremenitve praznega vozila', fields: [['tare.steer', 'Krmilna os', 't'], ['tare.drive', 'Pogonska os', 't'], ['tare.trailer', 'Osi polpriklopnika', 't']] },
+    { group: 'Največje dovoljene obremenitve', fields: [['lim.steer', 'Krmilna os', 't'], ['lim.drive', 'Pogonska os', 't'], ['lim.trailer', 'Osi polpriklopnika', 't'], ['lim.gross', 'Skupna masa', 't']] },
+    { group: 'Najmanjše obremenitve', fields: [['minDrivePct', 'Delež pogonske osi v skupni masi', '%']] }
+  ],
+  rigid: [
+    { group: 'Tovorni prostor, notranje mere', fields: [['deckL', 'Dolžina', 'mm'], ['deckW', 'Širina', 'mm'], ['deckH', 'Višina', 'mm']] },
+    { group: 'Geometrija', fields: [['frontAxle', 'Prednja os do čelne stene (− = spredaj)', 'm'], ['rearAxle', 'Zadnja os za čelno steno', 'm']] },
+    { group: 'Osne obremenitve praznega vozila', fields: [['tare.steer', 'Prednja os', 't'], ['tare.drive', 'Zadnja os', 't']] },
+    { group: 'Največje dovoljene obremenitve', fields: [['lim.steer', 'Prednja os', 't'], ['lim.drive', 'Zadnja os', 't'], ['lim.gross', 'Skupna masa', 't']] },
+    { group: 'Najmanjše obremenitve', fields: [['minDrivePct', 'Delež zadnje osi v skupni masi', '%'], ['minSteerPct', 'Delež prednje osi (krmiljenje)', '%']] }
+  ]
+};
+const ICON = {
+  x: '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>',
+  first: '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.5 3v10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M13 3L6 8l7 5z" fill="currentColor"/></svg>',
+  prev: '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M11.5 3L4.5 8l7 5z" fill="currentColor"/></svg>',
+  next: '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4.5 3l7 5-7 5z" fill="currentColor"/></svg>',
+  last: '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M12.5 3v10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M3 3l7 5-7 5z" fill="currentColor"/></svg>',
+  play: '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4.5 2.5l9 5.5-9 5.5z" fill="currentColor"/></svg>',
+  pause: '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4 3h3v10H4zM9 3h3v10H9z" fill="currentColor"/></svg>'
+};
+
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const dec = (n, d) => (Math.round(n * Math.pow(10, d)) / Math.pow(10, d)).toFixed(d).replace('.', ',');
+const t2 = n => dec(n, 2);
+const m2 = mm => dec(mm / 1000, 2);
+const fmtInt = n => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+const fmtKg = kg => kg >= 1000 ? t2(kg / 1000) + ' t' : fmtInt(kg) + ' kg';
+const fmtLim = n => dec(n, 1);
+const pct = n => n + ' %';
+const fmtIn = n => String(n).replace('.', ',');
+// accepts "2,4" and "2.4"
+const num = str => { const t = String(str).trim().replace(/\s+/g, '').replace(',', '.'); return t === '' ? NaN : Number(t); };
+// Slovenian plural forms: 1 paleta, 2 paleti, 3–4 palete, 5+ palet
+const plural = (n, f) => { const m = Math.abs(n) % 100; return m === 1 ? f[0] : m === 2 ? f[1] : (m === 3 || m === 4) ? f[2] : f[3]; };
+const dimStr = p => Math.max(p.l, p.w) + '×' + Math.min(p.l, p.w);
+const getPath = (o, p) => p.split('.').reduce((a, k) => (a == null ? a : a[k]), o);
+const setPath = (o, p, val) => { const ks = p.split('.'); let a = o; for (let i = 0; i < ks.length - 1; i++) a = a[ks[i]]; a[ks[ks.length - 1]] = val; };
+
+let nextId = 1;
+let state = loadState() || defaultState();
+let result = null, curStep = 0, playTimer = null, recalcTimer = null;
+
+function defaultState() {
+  return {
+    vehicleKey: 'semi', vehicle: clone(VEHICLE_PRESETS.semi), stacking: 'needed', isExample: true,
+    layout: 'compact', reserveM: 0, reserveT: 0,
+    lines: EXAMPLE.map((t, i) => Object.assign({ id: nextId++, color: COLORS[i] }, t))
+  };
+}
+function loadState() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    if (!s || !s.vehicle || !VEHICLE_PRESETS[s.vehicle.type] || !Array.isArray(s.lines)) return null;
+    const base = clone(VEHICLE_PRESETS[s.vehicle.type]);
+    s.vehicle = Object.assign(base, s.vehicle, {
+      name: VEHICLE_PRESETS[s.vehicle.type].name,
+      tare: Object.assign(base.tare, s.vehicle.tare || {}),
+      lim: Object.assign(base.lim, s.vehicle.lim || {})
+    });
+    if (!VEHICLE_PRESETS[s.vehicleKey]) s.vehicleKey = s.vehicle.type;
+    if (!['needed', 'always', 'never'].includes(s.stacking)) s.stacking = 'needed';
+    if (!['compact', 'spread'].includes(s.layout)) s.layout = 'compact';
+    s.reserveM = Math.max(0, +s.reserveM || 0);
+    s.reserveT = Math.max(0, +s.reserveT || 0);
+    s.lines = s.lines.filter(l => l && typeof l === 'object').slice(0, 30);
+    nextId = s.lines.reduce((m, l) => Math.max(m, +l.id || 0), 0) + 1;
+    s.lines.forEach(l => { if (!(+l.id > 0)) l.id = nextId++; if (!l.color) l.color = COLORS[0]; });
+    if (s.isExample) s.lines = EXAMPLE.map((t, i) => Object.assign({ id: nextId++, color: COLORS[i] }, t));
+    return s;
+  } catch (e) { return null; }
+}
+function saveState() { try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ } }
+
+/* ----- Vehicle panel ----- */
+function renderVehicle() {
+  $('#vehPreset').value = state.vehicleKey;
+  const v = state.vehicle;
+  $('#vehFields').innerHTML = VEH_FIELDS[v.type].map(g => `
+    <fieldset class="vgroup"><legend>${g.group}</legend><div class="vgrid">
+      ${g.fields.map(([path, label, unit]) => {
+        const id = 'v-' + path.replace('.', '-');
+        return `<label class="vfield" for="${id}"><span>${label}</span><span class="inwrap"><input type="text" class="numin" inputmode="${path === 'frontAxle' ? 'text' : 'decimal'}" autocomplete="off" id="${id}" data-path="${path}" value="${fmtIn(getPath(v, path))}"><i>${unit}</i></span></label>`;
+      }).join('')}
+    </div></fieldset>`).join('');
+  renderVehSpec();
+}
+function renderVehSpec() {
+  const v = state.vehicle;
+  const tare = Object.values(v.tare).reduce((s, x) => s + x, 0);
+  $('#vehSpec').innerHTML = `Tovorni prostor <b>${m2(v.deckL)} × ${m2(v.deckW)} × ${m2(v.deckH)} m</b> · prazno vozilo <b>${fmtLim(tare)} t</b> · tovor do <b>${fmtLim(v.lim.gross - tare)} t</b>`;
+  $('#metaLine').textContent = v.name + (isEdited() ? ' · prilagojeni podatki' : '');
+}
+function isEdited() {
+  return JSON.stringify(state.vehicle) !== JSON.stringify(VEHICLE_PRESETS[state.vehicleKey]);
+}
+
+/* ----- Cargo panel ----- */
+function dimField(id, f, label, unit, val) {
+  return `<label for="${f}-${id}"><span>${label}</span><span class="inwrap"><input type="text" class="numin" inputmode="decimal" autocomplete="off" id="${f}-${id}" data-f="${f}" value="${fmtIn(val)}"><i>${unit}</i></span></label>`;
+}
+function renderLines() {
+  const box = $('#lines');
+  if (!state.lines.length) {
+    box.innerHTML = `<p class="empty">Še ni palet. Spodaj dodajte vrsto palete ali <button type="button" class="link" data-act="example">naložite primer</button>.</p>`;
+  } else {
+    box.innerHTML = state.lines.map(ln => `
+      <div class="line" data-id="${ln.id}">
+        <div class="line-top">
+          <span class="swatch" style="--c:${ln.color}" aria-hidden="true"></span>
+          <input type="text" class="lbl" id="lbl-${ln.id}" data-f="label" value="${esc(ln.label)}" aria-label="Opis" placeholder="Opis" maxlength="40">
+          <label class="qty" for="qty-${ln.id}"><span>Kol.</span><input type="text" class="numin" inputmode="numeric" autocomplete="off" id="qty-${ln.id}" data-f="qty" value="${ln.qty}"></label>
+          <button type="button" class="iconbtn del" data-act="del" aria-label="Odstrani ${esc(ln.label)}">${ICON.x}</button>
+        </div>
+        <div class="dims">
+          ${dimField(ln.id, 'l', 'Dolžina', 'mm', ln.l)}
+          ${dimField(ln.id, 'w', 'Širina', 'mm', ln.w)}
+          ${dimField(ln.id, 'h', 'Višina', 'mm', ln.h)}
+          ${dimField(ln.id, 'kg', 'Masa kos', 'kg', ln.kg)}
+        </div>
+        <label class="check" for="st-${ln.id}"><input type="checkbox" id="st-${ln.id}" data-f="stack" ${ln.stack ? 'checked' : ''}>Zložljiva <span class="muted">· nanjo gre lahko ena paleta enake mere</span></label>
+      </div>`).join('');
+  }
+  $('#exampleTag').hidden = !state.isExample;
+  $('#exampleBanner').hidden = !state.isExample;
+  $('#clearBtn').hidden = !state.lines.length;
+}
+function renderAddRow() {
+  $('#addRow').innerHTML = ADD_TYPES.map((t, i) => `<button type="button" class="btn small" data-add="${i}">+ ${t.btn}</button>`).join('');
+}
+function renderTotals() {
+  let n = 0, kg = 0, area = 0;
+  for (const l of state.lines) {
+    const q = Math.max(0, Math.floor(+l.qty) || 0);
+    if (+l.l > 0 && +l.w > 0) { n += q; kg += q * (+l.kg || 0); area += q * l.l * l.w / 1e6; }
+  }
+  $('#cargoTotals').innerHTML = n ? `<span><b>${n}</b> ${plural(n, ['paleta', 'paleti', 'palete', 'palet'])}</span><span><b>${fmtInt(kg)}</b> kg</span><span><b>${dec(area, 1)}</b> m² tlorisa</span>` : '';
+}
+
+/* ----- Results ----- */
+function recalc() {
+  stopPlay();
+  saveState();
+  renderTotals();
+  renderVehSpec();
+  result = planLoad({
+    vehicle: state.vehicle, lines: state.lines, stacking: state.stacking,
+    layout: state.layout, reserveM: state.reserveM, reserveT: state.reserveT
+  });
+  curStep = result.placed.length;
+  renderSummary();
+  renderLegend();
+  renderSteps();
+  renderStepUI();
+}
+function scheduleRecalc() { clearTimeout(recalcTimer); recalcTimer = setTimeout(recalc, 220); }
+
+function adviceFor(c) {
+  if (c.over) {
+    if (c.key === 'gross') return `Odstranite ${t2(c.load - c.max)} t tovora.`;
+    if (c.key === 'trailer') return 'Težje palete premaknite proti čelni steni ali zmanjšajte tovor.';
+    return 'Težje palete premaknite proti zadnjemu delu vozila ali zmanjšajte tovor.';
+  }
+  if (c.key === 'drive') return 'Težje palete premaknite proti čelni steni.';
+  return 'Težo premaknite proti sprednjemu delu vozila.';
+}
+function checkMessage(c, gross) {
+  if (c.over) return `${c.label}: ${t2(c.load)} t presega omejitev ${fmtLim(c.max)} t za ${t2(c.load - c.max)} t. ${adviceFor(c)}`;
+  const p = Math.round(c.load / gross * 100);
+  if (c.key === 'drive') return `${c.label} nosi ${pct(p)} skupne mase; v mednarodnem prometu mora nositi najmanj ${pct(c.minPct)}. ${adviceFor(c)}`;
+  return `${c.label} nosi ${pct(p)} skupne mase; za varno krmiljenje naj nosi najmanj ${pct(c.minPct)}. ${adviceFor(c)}`;
+}
+
+function renderSummary() {
+  const r = result, v = r.vehicle;
+  const failing = r.checks.filter(c => !c.ok);
+  const missing = r.unplaced.length + r.rejected.length;
+  let pill, head;
+  if (!r.totalPallets) { pill = ['idle', 'Ni tovora']; head = 'Dodajte palete za načrt nakladanja.'; }
+  else if (failing.length) {
+    pill = ['bad', 'Prekoračeno'];
+    const c = failing[0];
+    head = c.over ? `${c.label} ${t2(c.load)} t, omejitev ${fmtLim(c.max)} t` : `${c.label} premalo obremenjena: ${t2(c.load)} t, potrebno najmanj ${t2(c.min)} t`;
+  } else if (missing) { pill = ['warn', 'Ne gre vse']; head = `Na vozilo gre ${r.loadedPallets} od ${r.totalPallets} palet`; }
+  else { pill = ['ok', 'Pripravljeno']; head = `Vse palete (${r.loadedPallets}) so znotraj omejitev osi in skupne mase` + (r.extraT ? `, vključno s kasnejšim tovorom ${fmtLim(r.extraT)} t` : ''); }
+  $('#status').innerHTML = `<span class="pill ${pill[0]}">${pill[1]}</span><span class="headline">${esc(head)}</span>`;
+
+  const tare = Object.values(v.tare).reduce((s, x) => s + x, 0);
+  const maxPay = v.lim.gross - tare;
+  const free = Math.max(0, r.Davail - r.ldm);
+  const ldmSub = r.reserveM > 0
+    ? `${t2(r.reserveM)} m rezervirano${free >= 0.05 ? ` · ${t2(free)} m prosto` : ''}`
+    : `${t2(free)} m prosto zadaj`;
+  const stackSub = r.stacks ? `${r.stacks} ${plural(r.stacks, ['par', 'para', 'pari', 'parov'])} v dveh višinah` : 'en sloj';
+  $('#figs').innerHTML = `
+    <div class="fig"><div class="k">Palete</div><div class="v">${r.loadedPallets}<small>/ ${r.totalPallets}</small></div><div class="s">${stackSub}</div></div>
+    <div class="fig"><div class="k">Tovor</div><div class="v">${t2(r.Pt)}<small>t</small></div><div class="s">${r.extraT ? `+ ${fmtLim(r.extraT)} t kasneje` : `od možnih ${fmtLim(maxPay)} t`}</div></div>
+    <div class="fig"><div class="k">Nakladalni metri</div><div class="v">${t2(r.ldm)}<small>m</small></div><div class="s">${ldmSub}</div></div>
+    <div class="fig"><div class="k">Zasedenost tal</div><div class="v">${Math.round(r.floorUse * 100)}<small>%</small></div><div class="s">od ${dec(v.deckL * v.deckW / 1e6, 1)} m² tal</div></div>`;
+
+  $('#axles').innerHTML = r.checks.map(c => {
+    const scale = Math.max(c.max * 1.15, c.load * 1.04);
+    const st = !c.ok ? 'bad' : c.ratio > 0.97 ? 'warn' : '';
+    const sub = c.min != null ? `najv. ${fmtLim(c.max)} t · najm. ${pct(c.minPct)} skupne mase` : `najv. ${fmtLim(c.max)} t`;
+    return `<div class="axle">
+      <div class="nm">${c.label}<span>${sub}</span></div>
+      <div class="bar" role="img" aria-label="${c.label} ${t2(c.load)} od ${fmtLim(c.max)} t">
+        <div class="fill ${st}" style="width:${Math.min(100, c.load / scale * 100).toFixed(1)}%"></div>
+        ${c.min != null ? `<div class="min" style="left:${(c.min / scale * 100).toFixed(1)}%"></div>` : ''}
+        <div class="lim" style="left:${(c.max / scale * 100).toFixed(1)}%"></div>
+      </div>
+      <div class="val ${st}"><b>${t2(c.load)} t</b><span>${pct(Math.round(c.ratio * 100))} omejitve</span></div>
+    </div>`;
+  }).join('');
+
+  const bal = [];
+  if (r.Pkg > 0) {
+    bal.push(`<span>Težišče tovora <b>${t2(r.xc)} m</b> za čelno steno</span>`);
+    if (r.win.feasible) bal.push(`<span>Dovoljeno območje <b>${t2(r.win.lo)}–${t2(Math.min(r.win.hi, v.deckL / 1000))} m</b></span>`);
+    const right = 50 + r.yOff / (v.deckW / 1000) * 100;
+    bal.push(`<span>Levo / desno <b>${Math.round(100 - right)} / ${pct(Math.round(right))}</b></span>`);
+  }
+  $('#balance').innerHTML = bal.join('');
+
+  const rowsHave = n => plural(n, ['vrsta ima', 'vrsti imata', 'vrste imajo', 'vrst ima']);
+  const notes = [];
+  for (const c of failing) notes.push(['bad', checkMessage(c, r.L.gross)]);
+  if (r.Pkg > 0 && !r.win.feasible && !failing.some(c => c.key === 'gross')) notes.push(['bad', 'S tem tovorom nobena lega na vozilu ne ohrani vseh osi znotraj omejitev. Zmanjšajte tovor ali preverite podatke vozila.']);
+  if (r.shift > 0) notes.push(['info', `Tovor se začne ${t2(r.shift)} m za čelno steno, da prednji del vozila ni preobremenjen. Vrzel zapolnite (npr. s praznimi paletami) ali tovor pritrdite, da ne more zdrsniti naprej.`]);
+  if (r.layout === 'spread' && r.placed.length) {
+    if (r.spreadFallback) notes.push(['warn', 'Za razporeditev v vrstah ni dovolj prostora, zato je tovor naložen strnjeno.']);
+    else if (r.singles) notes.push(['info', `${r.singles} ${rowsHave(r.singles)} eno paleto na sredini, zato tovor brez vrzeli med vrstami pokriva ${t2(r.ldm)} m. Posamezne palete pritrdite ali jih bočno blokirajte.`]);
+    else if (r.partial) notes.push(['info', `${r.partial} ${rowsHave(r.partial)} manj palet, postavljenih na sredino, zato tovor brez vrzeli med vrstami pokriva ${t2(r.ldm)} m. Palete, ki se ne dotikajo stranic, blokirajte ali pritrdite.`]);
+    else notes.push(['info', `Vse vrste so polne in tesno skupaj; tovor pokriva ${t2(r.ldm)} m.`]);
+    if (failing.some(c => c.key !== 'gross')) notes.push(['warn', 'Pri razporejenem nakladanju je prekoračena omejitev osi. Poskusite strnjeno nakladanje.']);
+  }
+  if (r.reserveM > 0 && r.Davail <= 0) notes.push(['bad', 'Rezervirani prostor zadaj pokriva celotno nakladalno površino.']);
+  else if (r.reserveM > 0) notes.push(['info', `Rezerva pri zadnjih vratih: ${t2(r.reserveM)} m.${r.extraT ? ` Preverjanje osi vključuje ${fmtLim(r.extraT)} t tovora, načrtovanega za ta prostor, enakomerno porazdeljenega po njem.` : ''}`]);
+  if (state.reserveT > 0 && !(r.reserveM > 0)) notes.push(['warn', 'Načrtovana dodatna masa ni upoštevana, ker zadaj ni rezerviranega prostora.']);
+  if (r.unplaced.length) notes.push(['warn', `Ni prostora za ${r.unplaced.length} ${plural(r.unplaced.length, ['paleto', 'paleti', 'palete', 'palet'])}: ${summarizePallets(r.unplaced)}.${state.stacking === 'never' ? ' Pomagalo bi lahko zlaganje v dve višini.' : ''}${r.reserveM > 0 ? ' Pomagala bi lahko manjša rezerva prostora zadaj.' : ''}`]);
+  const rejGroups = {};
+  for (const x of r.rejected) { const k = x.pallet.label + '|' + x.reason; rejGroups[k] = rejGroups[k] || { n: 0, label: x.pallet.label, reason: x.reason }; rejGroups[k].n++; }
+  for (const g of Object.values(rejGroups)) notes.push(['bad', `${g.n} × ${g.label}: ni mogoče naložiti (${g.reason}).`]);
+  if (r.stacks) notes.push(['ok', `${r.stacks} ${plural(r.stacks, ['par', 'para', 'pari', 'parov'])} zložljivih palet v dveh višinah, lažja paleta zgoraj.`]);
+  if (r.Pkg > 0) {
+    const right = 50 + r.yOff / (v.deckW / 1000) * 100;
+    if (Math.abs(right - 50) > 5) notes.push(['warn', `Teža je nagnjena na ${right > 50 ? 'desno' : 'levo'} stran (${pct(Math.round(Math.max(right, 100 - right)))}). Če je mogoče, zamenjajte težke in lahke palete po širini.`]);
+  }
+  if (r.totalPallets && r.layout === 'compact' && !failing.length && !missing && !r.shift) notes.push(['ok', 'Nakladajte ob čelno steno, brez vrzeli med vrstami.']);
+  $('#notes').innerHTML = notes.map(([c, t]) => `<li class="${c}">${esc(t)}</li>`).join('');
+  $('#notes').hidden = !notes.length;
+}
+function summarizePallets(ps) {
+  const m = new Map();
+  for (const p of ps) { const k = p.label + ' ' + dimStr(p); m.set(k, (m.get(k) || 0) + 1); }
+  return [...m].map(([k, n]) => `${n} × ${k}`).join(', ');
+}
+
+function renderLegend() {
+  const m = new Map();
+  for (const s of result.placed) for (const p of s.unit.pallets) {
+    const k = p.lineId;
+    if (!m.has(k)) m.set(k, { label: p.label, color: p.color, n: 0 });
+    m.get(k).n++;
+  }
+  $('#legend').innerHTML = [...m.values()].map(x => `<span><i style="--c:${x.color}"></i>${esc(x.label)} <b>${x.n}</b></span>`).join('');
+}
+
+function stepParts(s) {
+  const u = s.unit, b = u.pallets[0];
+  const what = u.stack
+    ? `${b.label} ${dimStr(b)}, ${fmtKg(b.kg)}, zgoraj ${u.pallets[1].label}, ${fmtKg(u.pallets[1].kg)}`
+    : `${b.label} ${dimStr(b)}, ${fmtKg(b.kg)}`;
+  const orient = s.along === null ? '' : s.along ? ', daljša stran vzdolž vozila' : ', daljša stran prečno';
+  const where = `${m2(s.y)}–${m2(s.y + s.h)} m od čelne stene, ${s.side}${orient}`;
+  return { what, where };
+}
+
+function renderSteps() {
+  const r = result;
+  if (!r.placed.length) {
+    $('#stepsList').innerHTML = `<li class="muted">Vrstni red nakladanja se prikaže, ko dodate palete.</li>`;
+    $('#copyBtn').disabled = true;
+    return;
+  }
+  $('#copyBtn').disabled = false;
+  $('#stepsList').innerHTML = r.rows.map((row, i) => `
+    <li class="rowgrp">
+      <div class="row-h"><span>Vrsta ${i + 1}</span><span>${m2(row.y0)}–${m2(row.y1)} m</span></div>
+      ${row.items.map(s => { const p = stepParts(s); return `
+        <button type="button" class="step" data-step="${s.step}">
+          <span class="num" style="--c:${s.unit.color}">${s.step}</span>
+          <span><span class="what">${esc(p.what)}</span><br><span class="where">${esc(p.where)}</span></span>
+        </button>`; }).join('')}
+    </li>`).join('');
+  $('#copyBox').hidden = true;
+}
+
+function setStep(n) {
+  const max = result ? result.placed.length : 0;
+  curStep = Math.max(0, Math.min(max, n));
+  renderStepUI();
+}
+function renderStepUI() {
+  const n = result.placed.length;
+  const rng = $('#stRange');
+  rng.max = n; rng.value = curStep; rng.disabled = !n;
+  $('#stFirst').disabled = !n || curStep === 0;
+  $('#stPrev').disabled = !n || curStep === 0;
+  $('#stNext').disabled = !n || curStep >= n;
+  $('#stLast').disabled = !n || curStep >= n;
+  $('#stPlay').disabled = !n;
+  $('#stPlay').innerHTML = playTimer ? ICON.pause : ICON.play;
+  $('#stPlay').setAttribute('aria-label', playTimer ? 'Ustavi' : 'Predvajaj nakladanje');
+  $('#stLabel').textContent = !n ? 'Ni palet' : curStep === 0 ? 'Prazno vozilo' : curStep >= n ? `Naloženo vse (${result.loadedPallets})` : `Korak ${curStep} od ${n}`;
+  const now = $('#stepNow');
+  if (!n) now.innerHTML = '<span class="muted">Dodajte palete za prikaz načrta.</span>';
+  else if (curStep === 0) now.innerHTML = '<b>Prazno vozilo.</b> <span class="muted">Pritisnite predvajaj ali korak naprej za ogled vrstnega reda nakladanja.</span>';
+  else if (curStep >= n) now.innerHTML = '<b>Polno naloženo.</b> <span class="muted">Kliknite paleto ali korak za ogled po vrsti. Črtkane obrobe kažejo mesta palet, ki pridejo kasneje.</span>';
+  else {
+    const s = result.placed[curStep - 1], p = stepParts(s);
+    now.innerHTML = `<b>Korak ${s.step}:</b> ${esc(p.what)}. <span class="muted">${esc(p.where)}.</span>`;
+  }
+  document.querySelectorAll('#stepsList .step').forEach(b => b.classList.toggle('cur', +b.dataset.step === curStep && curStep < n));
+  drawPlan();
+}
+function stopPlay() { if (playTimer) { clearInterval(playTimer); playTimer = null; } }
+function togglePlay() {
+  const n = result.placed.length;
+  if (playTimer) { stopPlay(); renderStepUI(); return; }
+  if (curStep >= n) curStep = 0;
+  playTimer = setInterval(() => {
+    if (curStep >= result.placed.length) { stopPlay(); renderStepUI(); return; }
+    curStep++;
+    if (curStep >= result.placed.length) stopPlay();
+    renderStepUI();
+  }, 650);
+  renderStepUI();
+}
+
+/* ----- Drawing ----- */
+function geometry(v) {
+  if (v.type === 'semi') {
+    const k = v.kingpin, a = v.kingpin + v.kpAxles;
+    const xs = k - (v.wheelbase - v.fwLead), xd = k + v.fwLead;
+    const n = v.trailerAxles || 3, trailer = [];
+    for (let i = 0; i < n; i++) trailer.push(a + (i - (n - 1) / 2) * v.axleSpacing);
+    return { k, a, steer: xs, drive: xd, trailer, cabFront: xs - 1.45, cabRear: Math.min(xs + 0.85, -0.15), floor: 1.22 };
+  }
+  return { steer: v.frontAxle, drive: v.rearAxle, trailer: [], cabFront: v.frontAxle - 1.35, cabRear: Math.min(v.frontAxle + 0.95, -0.12), floor: 1.15 };
+}
+
+function drawPlan() {
+  const r = result, v = r.vehicle, n = r.placed.length, step = curStep;
+  const D = v.deckL / 1000, Wd = v.deckW / 1000, Hd = v.deckH / 1000, S = 100;
+  const g = geometry(v), semi = v.type === 'semi';
+  const xMin = g.cabFront - 1.0, xMax = D + 0.95;
+  const VBW = Math.round((xMax - xMin) * S);
+  const X = x => +((x - xMin) * S).toFixed(1);
+  const roofH = g.floor + Hd + 0.08;
+  const groundY = Math.round(66 + roofH * S);
+  const Y = h => +(groundY - h * S).toFixed(1);
+  const planTop = groundY + 158;
+  const planH = Wd * S;
+  const P = across => +(planTop + (Wd - across) * S).toFixed(1);
+  const rulerY = planTop + planH + 62;
+  const VBH = Math.round(rulerY + 70);
+  const o = [];
+  const R = (x0, x1, h0, h1, cls, extra = '') => o.push(`<rect x="${X(x0)}" y="${Y(h1)}" width="${+((x1 - x0) * S).toFixed(1)}" height="${+((h1 - h0) * S).toFixed(1)}" class="${cls}" ${extra}/>`);
+  const poly = (pts, cls) => o.push(`<polygon class="${cls}" points="${pts.map(([x, h]) => X(x) + ',' + Y(h)).join(' ')}"/>`);
+
+  // visible load (pallets placed up to this step)
+  let kg = 0, ml = 0;
+  for (const s of r.placed) if (s.step <= step) { kg += s.unit.kg; ml += s.unit.kg * (s.y + s.h / 2) / 1000; }
+  const xcVis = kg > 0 ? ml / kg : 0;
+  const full = step >= n;
+  const Lv = full ? loadsWith(v, kg / 1000, xcVis, r.extra) : axleLoads(v, kg / 1000, xcVis);
+
+  o.push(`<defs><pattern id="hatch" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="14" height="14" fill="var(--accent-soft)"/><line x1="0" y1="0" x2="0" y2="14" class="sv-hatchline"/></pattern>`
+    + `<pattern id="hatchRes" width="16" height="16" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)"><rect width="16" height="16" fill="var(--panel-2)"/><line x1="0" y1="0" x2="0" y2="16" class="sv-resline"/></pattern></defs>`);
+
+  // captions
+  o.push(`<text x="0" y="24" class="sv-cap" font-size="19">STRANSKI POGLED · LEVA STRAN</text>`);
+  o.push(`<text x="0" y="${planTop - 54}" class="sv-cap" font-size="19">TLORIS · POGLED OD ZGORAJ</text>`);
+
+  /* ---- side view: vehicle ---- */
+  const cf = g.cabFront, cr = g.cabRear;
+  if (semi) {
+    R(cf + 0.2, g.drive + 0.95, 0.72, 1.02, 'sv-truck2');                 // tractor frame
+    R(g.k - 0.5, g.k + 0.5, 1.02, g.floor - 0.12, 'sv-truck2');          // fifth wheel
+    R(0, D, g.floor - 0.12, g.floor, 'sv-truck');                        // trailer floor
+    R(0.35, g.a + 1.1, g.floor - 0.38, g.floor - 0.12, 'sv-truck2');     // main beam
+    R(g.k + 1.75, g.k + 1.87, 0.16, g.floor - 0.38, 'sv-truck2');        // landing leg
+    R(g.k + 1.62, g.k + 2.0, 0.08, 0.16, 'sv-truck2');
+    R(D - 0.14, D - 0.04, 0.42, g.floor - 0.12, 'sv-truck2');            // rear bumper
+    R(D - 0.3, D, 0.42, 0.54, 'sv-truck2');
+  } else {
+    R(cf + 0.2, D + 0.05, 0.68, 0.98, 'sv-truck2');                      // chassis
+    R(0, D, g.floor - 0.17, g.floor, 'sv-truck');                        // body floor
+    R(D - 0.12, D - 0.02, 0.42, 0.7, 'sv-truck2');
+    R(D - 0.28, D + 0.02, 0.42, 0.54, 'sv-truck2');
+  }
+  // cab
+  poly([[cf, 0.62], [cf, 2.6], [cf + 0.14, 3.18], [cf + 0.34, 3.3], [cr, 3.3], [cr, 0.88], [cf + 0.3, 0.88], [cf + 0.3, 0.62]], 'sv-truck');
+  if (roofH - 3.3 > 0.2) poly([[cf + 0.5, 3.3], [cr - 0.02, 3.3], [cr - 0.02, roofH - 0.03], [cf + 1.15, roofH - 0.16]], 'sv-truck2');
+  poly([[cf + 0.24, 2.1], [cf + 0.24, 2.72], [cf + 0.38, 3.06], [cf + 1.12, 3.06], [cf + 1.12, 2.1]], 'sv-glass');
+  R(cf - 0.01, cf + 0.05, 0.86, 1.04, 'sv-glass');
+  // body (curtain outline) and headboard
+  o.push(`<rect x="${X(0)}" y="${Y(roofH)}" width="${D * S}" height="${+((roofH - g.floor) * S).toFixed(1)}" class="sv-body"/>`);
+  R(-0.07, 0, g.floor, roofH, 'sv-truck2');
+  R(0, D, roofH - 0.06, roofH, 'sv-truck2');
+  if (r.reserveM > 0) {
+    const x0 = Math.max(0, D - r.reserveM);
+    o.push(`<rect x="${X(x0) + 4}" y="${Y(roofH - 0.06) + 4}" width="${Math.max(0, +((D - x0) * S - 8).toFixed(1))}" height="${+((roofH - 0.06 - g.floor) * S - 8).toFixed(1)}" class="sv-resside"/>`);
+  }
+
+  /* ---- side view: pallets (far side first so the near side covers it) ---- */
+  const vis = r.placed.filter(s => s.step <= step);
+  const sideOrder = vis.slice().sort((a, b) => (b.x + b.w) - (a.x + a.w) || b.x - a.x);
+  const cur = !full && step > 0 ? r.placed[step - 1] : null;
+  const drawSide = (s, isCur) => {
+    let z = g.floor;
+    for (const p of s.unit.pallets) {
+      const h = p.h / 1000;
+      R(s.y / 1000, (s.y + s.h) / 1000, z, z + h, 'sv-pallet', `fill="${p.color}"${isCur ? ' fill-opacity=".92"' : ''}`);
+      R(s.y / 1000, (s.y + s.h) / 1000, z, z + Math.min(0.144, h), 'sv-base');
+      z += h;
+    }
+    if (isCur) {
+      const top = g.floor + s.unit.h / 1000;
+      o.push(`<rect x="${X(s.y / 1000)}" y="${Y(top)}" width="${s.h / 10}" height="${+((top - g.floor) * S).toFixed(1)}" class="sv-cur"/>`);
+    }
+  };
+  for (const s of sideOrder) if (s !== cur) drawSide(s, false);
+  if (cur) drawSide(cur, true);
+
+  // wheels with arches for the motor vehicle
+  const wheel = (x, arch) => {
+    if (arch) o.push(`<circle cx="${X(x)}" cy="${Y(0.52)}" r="${0.62 * S}" class="sv-arch"/>`);
+    o.push(`<circle cx="${X(x)}" cy="${Y(0.52)}" r="${0.52 * S}" class="sv-wheel"/><circle cx="${X(x)}" cy="${Y(0.52)}" r="${0.2 * S}" class="sv-hub"/>`);
+  };
+  wheel(g.steer, true);
+  wheel(g.drive, true);
+  for (const x of g.trailer) wheel(x, false);
+  o.push(`<line x1="0" y1="${groundY}" x2="${VBW}" y2="${groundY}" class="sv-ground"/>`);
+
+  // axle loads under the side view
+  const status = (key, load) => {
+    const c = r.checks.find(q => q.key === key);
+    if (!c) return '';
+    if (load > c.max + 1e-6) return 'bad';
+    if (full && !c.ok) return 'bad';
+    return load / c.max > 0.97 ? 'warn' : 'ok';
+  };
+  const lim = key => r.checks.find(q => q.key === key).max;
+  const groups = [{ x: g.steer, key: 'steer' }, { x: g.drive, key: 'drive' }];
+  if (semi) groups.push({ x: g.a, key: 'trailer' });
+  for (const gr of groups) {
+    const load = Lv[gr.key];
+    o.push(`<line x1="${X(gr.x)}" y1="${groundY + 6}" x2="${X(gr.x)}" y2="${groundY + 20}" class="sv-tick"/>`);
+    o.push(`<text x="${X(gr.x)}" y="${groundY + 46}" text-anchor="middle" font-size="25" class="sv-load ${status(gr.key, load)}">${t2(load)} t</text>`);
+    o.push(`<text x="${X(gr.x)}" y="${groundY + 70}" text-anchor="middle" font-size="18" class="sv-muted">najv. ${fmtLim(lim(gr.key))} t</text>`);
+  }
+  o.push(`<text x="0" y="${groundY + 46}" class="sv-cap" font-size="16">OSNE OBREMENITVE</text>`);
+  o.push(`<text x="0" y="${groundY + 70}" class="sv-muted" font-size="17">${full ? (r.extraT ? `+ ${fmtLim(r.extraT)} t kasneje` : 'polno naloženo') : step === 0 ? 'prazno' : 'po koraku ' + step}</text>`);
+
+  /* ---- plan view ---- */
+  // tractor / cab outline for orientation
+  o.push(`<rect x="${X(cf)}" y="${P(Wd - 0.05)}" width="${+((cr - cf) * S).toFixed(1)}" height="${+((Wd - 0.1) * S).toFixed(1)}" rx="10" class="sv-tractor"/>`);
+  if (semi) {
+    o.push(`<rect x="${X(cr)}" y="${P(Wd / 2 + 0.48)}" width="${+((Math.max(0, g.drive + 0.95) - cr) * S).toFixed(1)}" height="10" class="sv-truck2"/>`);
+    o.push(`<rect x="${X(cr)}" y="${P(Wd / 2 - 0.38)}" width="${+((Math.max(0, g.drive + 0.95) - cr) * S).toFixed(1)}" height="10" class="sv-truck2"/>`);
+  }
+  // deck
+  o.push(`<rect x="${X(0)}" y="${planTop}" width="${D * S}" height="${planH}" class="sv-deck"/>`);
+  // wheels in plan, just outside the deck edges
+  const planWheel = x => {
+    o.push(`<rect x="${X(x - 0.48)}" y="${planTop - 20}" width="96" height="14" rx="3" class="sv-wheel"/>`);
+    o.push(`<rect x="${X(x - 0.48)}" y="${planTop + planH + 6}" width="96" height="14" rx="3" class="sv-wheel"/>`);
+  };
+  planWheel(g.steer); planWheel(g.drive); g.trailer.forEach(planWheel);
+  if (semi) {
+    o.push(`<line x1="${X(g.k)}" y1="${planTop - 26}" x2="${X(g.k)}" y2="${planTop}" class="sv-tick"/>`);
+    o.push(`<text x="${X(g.k)}" y="${planTop - 31}" text-anchor="middle" font-size="16" class="sv-muted">vlečni zatič</text>`);
+  }
+  o.push(`<text x="${X(D)}" y="${planTop - 31}" text-anchor="end" font-size="16" class="sv-muted">desna stran</text>`);
+  o.push(`<text x="${X(D)}" y="${planTop + planH + 42}" text-anchor="end" font-size="16" class="sv-muted">leva stran (voznik)</text>`);
+  o.push(`<text transform="translate(${X(0) - 16} ${planTop + planH / 2}) rotate(-90)" text-anchor="middle" font-size="15" class="sv-cap">ČELNA STENA</text>`);
+  o.push(`<text transform="translate(${X(D) + 20} ${planTop + planH / 2}) rotate(90)" text-anchor="middle" font-size="15" class="sv-cap">ZADNJA VRATA</text>`);
+
+  // gap at headboard
+  if (r.shift > 0 && n) {
+    o.push(`<rect x="${X(0)}" y="${planTop}" width="${r.shift * S}" height="${planH}" class="sv-gapbox"/>`);
+    o.push(`<text x="${X(r.shift / 2)}" y="${planTop + planH + 42}" text-anchor="middle" font-size="16" class="sv-cogtext">vrzel ${t2(r.shift)} m</text>`);
+  }
+  // space kept free at the rear doors
+  if (r.reserveM > 0) {
+    const x0 = Math.max(0, D - r.reserveM), wm = D - x0, cxm = x0 + wm / 2;
+    o.push(`<rect x="${X(x0)}" y="${planTop}" width="${+(wm * S).toFixed(1)}" height="${planH}" class="sv-resbox"/>`);
+    if (wm >= 0.75) {
+      o.push(`<text x="${X(cxm)}" y="${planTop + planH / 2 - 4}" text-anchor="middle" font-size="18" class="sv-restext">rezervirano</text>`);
+      o.push(`<text x="${X(cxm)}" y="${planTop + planH / 2 + 20}" text-anchor="middle" font-size="17" class="sv-gtext">${t2(wm)} m</text>`);
+      if (r.extraT && wm >= 0.75) o.push(`<text x="${X(cxm)}" y="${planTop + planH / 2 + 42}" text-anchor="middle" font-size="17" class="sv-gtext">${fmtLim(r.extraT)} t kasneje</text>`);
+    }
+  }
+  // unused space within the usable length
+  const freeM = r.Davail - r.ldm;
+  if (n && freeM > 0.5) {
+    o.push(`<text x="${X(r.ldm + freeM / 2)}" y="${planTop + planH / 2 - 4}" text-anchor="middle" font-size="18" class="sv-muted">prosto</text>`);
+    o.push(`<text x="${X(r.ldm + freeM / 2)}" y="${planTop + planH / 2 + 20}" text-anchor="middle" font-size="18" class="sv-gtext">${t2(freeM)} m</text>`);
+  }
+
+  // pallets in plan
+  for (const s of r.placed) {
+    const x = X(s.y / 1000), y = P((s.x + s.w) / 1000), w = s.h / 10, h = s.w / 10;
+    const cx = x + w / 2, cy = y + h / 2;
+    const small = w < 70 || h < 56;
+    if (s.step > step) {
+      o.push(`<g class="sv-unit" data-step="${s.step}"><rect x="${x + 2}" y="${y + 2}" width="${w - 4}" height="${h - 4}" class="sv-ghost"/>`
+        + `<text x="${cx}" y="${cy + 8}" text-anchor="middle" font-size="22" class="sv-gtext">${s.step}</text></g>`);
+      continue;
+    }
+    const u = s.unit;
+    let g2 = `<g class="sv-unit" data-step="${s.step}"><title>${esc(stepParts(s).what)}</title>`;
+    g2 += `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${u.color}" class="sv-pallet"/>`;
+    if (u.stack) g2 += `<rect x="${x + 7}" y="${y + 7}" width="${w - 14}" height="${h - 14}" fill="none" class="sv-pallet"/>`;
+    if (small) g2 += `<text x="${cx}" y="${cy + 9}" text-anchor="middle" font-size="25" font-weight="600" class="sv-ptext">${s.step}</text>`;
+    else {
+      g2 += `<text x="${cx}" y="${cy - 1}" text-anchor="middle" font-size="31" font-weight="600" class="sv-ptext">${s.step}</text>`;
+      // weight label: shorten it when the pallet is drawn narrow
+      let wl = (u.stack ? '2× ' : '') + fmtKg(u.kg), fs = 20;
+      if (wl.length * 12 > w - 10) wl = (u.stack ? '2×' : '') + (u.kg >= 1000 ? dec(u.kg / 1000, 1) + 't' : fmtInt(u.kg));
+      if (wl.length * 12 > w - 10) fs = 16;
+      g2 += `<text x="${cx}" y="${cy + 24}" text-anchor="middle" font-size="${fs}" class="sv-ptext">${wl}</text>`;
+    }
+    g2 += '</g>';
+    o.push(g2);
+  }
+  if (cur) {
+    const x = X(cur.y / 1000), y = P((cur.x + cur.w) / 1000);
+    o.push(`<rect x="${x}" y="${y}" width="${cur.h / 10}" height="${cur.w / 10}" class="sv-cur"/>`);
+  }
+
+  // ruler + allowed load-centre range
+  if (full && r.Pkg > 0 && r.win.feasible) {
+    const lo = Math.max(0, r.win.lo), hi = Math.min(D, r.win.hi);
+    o.push(`<rect x="${X(lo)}" y="${rulerY - 8}" width="${+((hi - lo) * S).toFixed(1)}" height="16" rx="3" class="sv-window"/>`);
+  }
+  o.push(`<line x1="${X(0)}" y1="${rulerY}" x2="${X(D)}" y2="${rulerY}" class="sv-rule"/>`);
+  for (let m = 0; m <= Math.floor(D + 1e-9); m++) {
+    o.push(`<line x1="${X(m)}" y1="${rulerY - 6}" x2="${X(m)}" y2="${rulerY + 6}" class="sv-rule"/>`);
+    o.push(`<text x="${X(m)}" y="${rulerY + 28}" text-anchor="middle" font-size="17" class="sv-gtext">${m}</text>`);
+  }
+  if (Math.abs(D - Math.round(D)) > 0.05) o.push(`<line x1="${X(D)}" y1="${rulerY - 6}" x2="${X(D)}" y2="${rulerY + 6}" class="sv-rule"/>`);
+  o.push(`<text x="${X(D)}" y="${rulerY + 56}" text-anchor="end" font-size="16" class="sv-muted">metri od čelne stene</text>`);
+
+  // load centre line through both views
+  if (kg > 0) {
+    const xx = X(xcVis);
+    o.push(`<line x1="${xx}" y1="${Y(roofH) - 10}" x2="${xx}" y2="${rulerY - 10}" class="sv-cog"/>`);
+    o.push(`<polygon points="${xx - 9},${rulerY - 20} ${xx + 9},${rulerY - 20} ${xx},${rulerY - 8}" class="sv-cogmark"/>`);
+    o.push(`<circle cx="${xx}" cy="${P(Wd / 2 + (full ? r.yOff : 0))}" r="11" fill="none" stroke="var(--accent)" stroke-width="3"/>`);
+    o.push(`<text x="${xx}" y="${Y(roofH) - 18}" text-anchor="middle" font-size="18" class="sv-cogtext">težišče tovora ${t2(xcVis)} m</text>`);
+    if (full && r.win.feasible) {
+      o.push(`<text x="${X(0)}" y="${rulerY + 56}" font-size="16" class="sv-wintext">dovoljeno težišče ${t2(Math.max(0, r.win.lo))}–${t2(Math.min(D, r.win.hi))} m</text>`);
+    }
+  }
+
+  const svg = $('#planSvg');
+  svg.setAttribute('viewBox', `0 0 ${VBW} ${VBH}`);
+  svg.style.maxWidth = Math.round(VBW * 0.74) + 'px';
+  svg.innerHTML = o.join('');
+}
+
+/* ----- Copy as text ----- */
+function planText() {
+  const r = result, v = r.vehicle;
+  const rowsN = n => plural(n, ['vrsta', 'vrsti', 'vrste', 'vrst']);
+  const L = [];
+  L.push(`NAČRT NAKLADANJA PALET · ${v.name}`);
+  L.push(`Palete ${r.loadedPallets}/${r.totalPallets} · tovor ${t2(r.Pt)} t · skupna masa ${t2(r.L.gross)} t · nakladalni metri ${t2(r.ldm)}`);
+  L.push('Osne obremenitve: ' + r.checks.filter(c => c.key !== 'gross').map(c => `${c.label.toLowerCase()} ${t2(c.load)} t (najv. ${fmtLim(c.max)})`).join(' · '));
+  if (r.Pkg > 0) L.push(`Težišče tovora ${t2(r.xc)} m za čelno steno${r.win.feasible ? ` (dovoljeno ${t2(r.win.lo)}–${t2(Math.min(r.win.hi, v.deckL / 1000))} m)` : ''}`);
+  const bad = r.checks.filter(c => !c.ok);
+  for (const c of bad) L.push('! ' + checkMessage(c, r.L.gross));
+  if (r.shift > 0) L.push(`! Ob čelni steni pustite ${t2(r.shift)} m prostora. Vrzel zapolnite (npr. s praznimi paletami) ali tovor pritrdite proti premiku naprej.`);
+  if (r.layout === 'spread' && r.partial) L.push(`Razporejeno nakladanje: vrste tesno skupaj, brez vrzeli; ${r.singles ? `${r.singles} ${rowsN(r.singles)} z eno paleto na sredini` : `${r.partial} ${rowsN(r.partial)} z manj paletami na sredini`}. Palete, ki se ne dotikajo stranic, pritrdite ali bočno blokirajte.`);
+  if (r.reserveM > 0) L.push(`Rezerva pri zadnjih vratih: ${t2(r.reserveM)} m${r.extraT ? ` (tovor ${fmtLim(r.extraT)} t, načrtovan za ta prostor, je upoštevan v osnih obremenitvah)` : ''}.`);
+  if (r.unplaced.length) L.push(`! Ni naloženo: ${summarizePallets(r.unplaced)}`);
+  L.push('');
+  r.rows.forEach((row, i) => {
+    L.push(`Vrsta ${i + 1} (${m2(row.y0)}–${m2(row.y1)} m)`);
+    for (const s of row.items) { const p = stepParts(s); L.push(`  ${s.step}. ${p.what}: ${p.where}`); }
+  });
+  L.push('');
+  L.push('Vsako paleto zavarujte pred zdrsom in prevrnitvijo (EN 12195-1). Osne obremenitve preverite na tehtnici.');
+  return L.join('\n');
+}
+
+/* ----- Events ----- */
+$('#vehPreset').addEventListener('change', e => {
+  state.vehicleKey = e.target.value;
+  state.vehicle = clone(VEHICLE_PRESETS[state.vehicleKey]);
+  renderVehicle();
+  recalc();
+});
+$('#vehReset').addEventListener('click', () => { state.vehicle = clone(VEHICLE_PRESETS[state.vehicleKey]); renderVehicle(); recalc(); });
+$('#vehFields').addEventListener('input', e => {
+  const inp = e.target.closest('input[data-path]');
+  if (!inp) return;
+  const path = inp.dataset.path, val = num(inp.value);
+  const allowNeg = path === 'frontAxle', allowZero = /Pct$/.test(path);
+  const ok = Number.isFinite(val) && (allowNeg || val > 0 || (allowZero && val === 0));
+  inp.setAttribute('aria-invalid', ok ? 'false' : 'true');
+  if (!ok) return;
+  setPath(state.vehicle, path, val);
+  scheduleRecalc();
+});
+
+$('#lines').addEventListener('input', e => {
+  const inp = e.target.closest('[data-f]');
+  if (!inp) return;
+  const line = state.lines.find(l => l.id === +inp.closest('.line').dataset.id);
+  if (!line) return;
+  const f = inp.dataset.f;
+  if (f === 'label') line.label = inp.value;
+  else if (f === 'stack') line.stack = inp.checked;
+  else {
+    const val = num(inp.value);
+    const ok = Number.isFinite(val) && (f === 'qty' ? val >= 0 : f === 'kg' ? val >= 0 : val > 0);
+    inp.setAttribute('aria-invalid', ok ? 'false' : 'true');
+    if (!ok) return;
+    line[f] = f === 'qty' ? Math.min(200, Math.floor(val)) : val;
+  }
+  markEdited();
+  scheduleRecalc();
+});
+$('#lines').addEventListener('change', e => { if (e.target.matches('input[type="checkbox"]')) { /* handled by input */ } });
+$('#lines').addEventListener('click', e => {
+  const b = e.target.closest('[data-act]');
+  if (!b) return;
+  if (b.dataset.act === 'del') {
+    const id = +b.closest('.line').dataset.id;
+    state.lines = state.lines.filter(l => l.id !== id);
+    markEdited(); renderLines(); recalc();
+  } else if (b.dataset.act === 'example') {
+    const s = defaultState();
+    state.lines = s.lines; state.isExample = true;
+    renderLines(); recalc();
+  }
+});
+$('#addRow').addEventListener('click', e => {
+  const b = e.target.closest('[data-add]');
+  if (!b) return;
+  if (state.lines.length >= 30) return;
+  const t = ADD_TYPES[+b.dataset.add];
+  const used = new Set(state.lines.map(l => l.color));
+  const color = COLORS.find(c => !used.has(c)) || COLORS[state.lines.length % COLORS.length];
+  state.lines.push({ id: nextId++, label: t.label, l: t.l, w: t.w, h: t.h, kg: t.kg, qty: 10, stack: false, color });
+  markEdited(); renderLines(); recalc();
+  const inp = document.getElementById('lbl-' + (nextId - 1));
+  if (inp) { inp.focus(); inp.select(); }
+});
+$('#clearBtn').addEventListener('click', () => { state.lines = []; state.isExample = false; renderLines(); recalc(); });
+$('#stackMode').addEventListener('change', e => { state.stacking = e.target.value; recalc(); });
+document.querySelectorAll('input[name="layout"]').forEach(el => el.addEventListener('change', e => {
+  if (e.target.checked) { state.layout = e.target.value; recalc(); }
+}));
+function bindNumber(sel, key, maxFn) {
+  $(sel).addEventListener('input', e => {
+    const raw = e.target.value.trim();
+    const val = raw === '' ? 0 : num(raw);
+    const ok = Number.isFinite(val) && val >= 0 && (!maxFn || val <= maxFn());
+    e.target.setAttribute('aria-invalid', ok ? 'false' : 'true');
+    if (!ok) return;
+    state[key] = val;
+    scheduleRecalc();
+  });
+}
+bindNumber('#reserveM', 'reserveM', () => state.vehicle.deckL / 1000);
+bindNumber('#reserveT', 'reserveT', () => 60);
+
+function markEdited() {
+  if (state.isExample) { state.isExample = false; $('#exampleTag').hidden = true; $('#exampleBanner').hidden = true; }
+}
+
+$('#stFirst').innerHTML = ICON.first; $('#stPrev').innerHTML = ICON.prev; $('#stNext').innerHTML = ICON.next; $('#stLast').innerHTML = ICON.last;
+$('#stFirst').addEventListener('click', () => { stopPlay(); setStep(0); });
+$('#stPrev').addEventListener('click', () => { stopPlay(); setStep(curStep - 1); });
+$('#stNext').addEventListener('click', () => { stopPlay(); setStep(curStep + 1); });
+$('#stLast').addEventListener('click', () => { stopPlay(); setStep(result.placed.length); });
+$('#stPlay').addEventListener('click', togglePlay);
+$('#stRange').addEventListener('input', e => { stopPlay(); setStep(+e.target.value); });
+$('#stepsList').addEventListener('click', e => {
+  const b = e.target.closest('.step');
+  if (!b) return;
+  stopPlay();
+  const s = +b.dataset.step;
+  setStep(curStep === s ? result.placed.length : s);
+});
+$('#planSvg').addEventListener('click', e => {
+  const gEl = e.target.closest('[data-step]');
+  if (!gEl) return;
+  stopPlay();
+  setStep(+gEl.dataset.step);
+});
+$('#copyBtn').addEventListener('click', () => {
+  const text = planText();
+  const fallback = () => {
+    $('#copyBox').hidden = false;
+    const ta = $('#copyText');
+    ta.value = text; ta.focus(); ta.select();
+  };
+  const btn = $('#copyBtn');
+  try {
+    navigator.clipboard.writeText(text).then(() => {
+      btn.textContent = 'Kopirano';
+      setTimeout(() => { btn.textContent = 'Kopiraj kot besedilo'; }, 1600);
+    }, fallback);
+  } catch (err) { fallback(); }
+});
+
+/* ----- Init ----- */
+renderVehicle();
+renderAddRow();
+renderLines();
+$('#stackMode').value = state.stacking;
+$('#layCompact').checked = state.layout !== 'spread';
+$('#laySpread').checked = state.layout === 'spread';
+$('#reserveM').value = fmtIn(state.reserveM);
+$('#reserveT').value = fmtIn(state.reserveT);
+recalc();
+})();
+</script>
+</body>
+</html>
