@@ -396,7 +396,10 @@ footer { margin-top: 22px; font-size: 13px; color: var(--muted); max-width: 90ch
 .line-more .check input { margin-top: 3px; }
 @media (max-width: 480px) { .brand h1 { font-size: 23px; } }
 .line-more { display: grid; gap: 8px; padding-left: 26px; }
-.line-more .dims { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.line-more .dims { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@container (max-width: 560px) { .line-more .dims { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.sv-palin { fill: none; stroke: var(--pallet-ink); stroke-opacity: .5; stroke-width: 1.4; stroke-dasharray: 5 4; }
+.line-more .hint { margin: 0; }
 .m-simple .line:not(.open) .line-more { display: none; }
 .m-expert .line-sum { display: none; }
 @container (max-width: 560px) {
@@ -745,10 +748,12 @@ function expandPallets(lines, v) {
   const pallets = [], rejected = [];
   let id = 0;
   lines.forEach((ln, li) => {
-    const l = +ln.l, w = +ln.w, h = +ln.h, kg = +ln.kg, qty = Math.min(200, Math.floor(+ln.qty));
-    if (!(l > 0 && w > 0 && h > 0 && kg >= 0 && qty > 0)) return;
+    const pl = +ln.l, pw = +ln.w, h = +ln.h, kg = +ln.kg, qty = Math.min(200, Math.floor(+ln.qty));
+    const ov = Math.max(0, +ln.ov || 0);                 // goods (e.g. a bigbag) sticking out past the pallet, per side
+    const l = pl + 2 * ov, w = pw + 2 * ov;              // footprint used for packing
+    if (!(pl > 0 && pw > 0 && h > 0 && kg >= 0 && qty > 0)) return;
     for (let i = 0; i < qty; i++) {
-      const p = { id: id++, li, lineId: ln.id, label: String(ln.label || '').trim() || 'Paleta', l, w, h, kg, stack: !!ln.stack, color: ln.color };
+      const p = { id: id++, li, lineId: ln.id, label: String(ln.label || '').trim() || 'Paleta', l, w, pl, pw, ov, h, kg, stack: !!ln.stack, color: ln.color };
       const big = Math.max(l, w), small = Math.min(l, w);
       let reason = null;
       if (h > v.deckH) reason = 'višja od tovornega prostora';
@@ -1451,7 +1456,7 @@ const fmtIn = n => String(n).replace('.', ',');
 const num = str => { const t = String(str).trim().replace(/\s+/g, '').replace(',', '.'); return t === '' ? NaN : Number(t); };
 // Slovenian plural forms: 1 paleta, 2 paleti, 3–4 palete, 5+ palet
 const plural = (n, f) => { const m = Math.abs(n) % 100; return m === 1 ? f[0] : m === 2 ? f[1] : (m === 3 || m === 4) ? f[2] : f[3]; };
-const dimStr = p => Math.max(p.l, p.w) + '×' + Math.min(p.l, p.w);
+const dimStr = p => { const a = p.pl || p.l, b = p.pw || p.w; return Math.max(a, b) + '×' + Math.min(a, b) + (p.ov > 0 ? ' (+' + Math.round(p.ov) + ' mm previs)' : ''); };
 const getPath = (o, p) => p.split('.').reduce((a, k) => (a == null ? a : a[k]), o);
 const setPath = (o, p, val) => { const ks = p.split('.'); let a = o; for (let i = 0; i < ks.length - 1; i++) a = a[ks[i]]; a[ks[ks.length - 1]] = val; };
 
@@ -1526,7 +1531,7 @@ function dimField(id, f, label, unit, val) {
 }
 function lineSummary(ln) {
   const a = Math.round(+ln.l || 0), b = Math.round(+ln.w || 0);
-  return `${Math.max(a, b)} × ${Math.min(a, b)} mm · višina ${Math.round(+ln.h || 0)} mm${ln.stack ? ' · zložljiva' : ''}`;
+  return `${Math.max(a, b)} × ${Math.min(a, b)} mm · višina ${Math.round(+ln.h || 0)} mm${+ln.ov > 0 ? ` · previs ${Math.round(+ln.ov)} mm na stran` : ''}${ln.stack ? ' · zložljiva' : ''}`;
 }
 function lineHTML(ln) {
   const open = openRows.has(ln.id);
@@ -1549,6 +1554,7 @@ function lineHTML(ln) {
           ${dimField(ln.id, 'l', 'Dolžina', 'mm', ln.l)}
           ${dimField(ln.id, 'w', 'Širina', 'mm', ln.w)}
           ${dimField(ln.id, 'h', 'Višina', 'mm', ln.h)}
+          ${dimField(ln.id, 'ov', 'Previs na stran', 'mm', ln.ov || 0)}
         </div>
         <label class="check" for="st-${ln.id}"><input type="checkbox" id="st-${ln.id}" data-f="stack" ${ln.stack ? 'checked' : ''}><span>Zložljiva <span class="muted">· nanjo gre lahko ena paleta enake mere</span></span></label>
       </div>
@@ -2089,6 +2095,8 @@ function drawPlan() {
     const u = q.unit;
     let g2 = `<g class="sv-unit" data-step="${q.step}"><title>${esc(stepParts(q).what)}</title>`;
     g2 += `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${u.color}" class="sv-pallet"/>`;
+    const ovPx = (u.pallets[0].ov || 0) / 10;
+    if (ovPx > 0) g2 += `<rect x="${x + ovPx}" y="${y + ovPx}" width="${w - 2 * ovPx}" height="${h - 2 * ovPx}" class="sv-palin"/>`;
     if (u.stack) g2 += `<rect x="${x + 7}" y="${y + 7}" width="${w - 14}" height="${h - 14}" fill="none" class="sv-pallet"/>`;
     if (small) g2 += `<text x="${cx}" y="${cy + 9}" text-anchor="middle" font-size="25" font-weight="600" class="sv-ptext">${q.step}</text>`;
     else {
@@ -2203,7 +2211,7 @@ $('#lines').addEventListener('input', e => {
   else if (f === 'stack') line.stack = inp.checked;
   else {
     const val = num(inp.value);
-    const ok = Number.isFinite(val) && (f === 'qty' ? val >= 0 : f === 'kg' ? val >= 0 : val > 0);
+    const ok = Number.isFinite(val) && (f === 'qty' || f === 'kg' || f === 'ov' ? val >= 0 : val > 0) && !(f === 'ov' && val > 500);
     inp.setAttribute('aria-invalid', ok ? 'false' : 'true');
     if (!ok) return;
     line[f] = f === 'qty' ? Math.min(200, Math.floor(val)) : val;
